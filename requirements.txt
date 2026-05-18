@@ -1,0 +1,5 @@
+langchain
+langchain-deepseek
+python-dotenv
+pydantic
+ddgs

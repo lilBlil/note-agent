@@ -1,0 +1,1 @@
+今天学习了 LangChain Agent 的基础结构，了解到 Agent 的核心是“大模型 + 工具调用 + 状态管理”。目前已经学会使用 create_agent 创建简单 Agent，并且能够通过 @tool 注册 Python 工具函数。还尝试接入 DeepSeek API，实现了天气查询和简单计算工具。过程中遇到了一些问题，例如 API Key 配置错误、余额不足以及 notebook 示例中的 pprint 调用错误。后续计划继续学习 LangGraph、Memory、RAG 和多 Agent 工作流，并尝试开发一个真正可以日常使用的笔记整理 Agent 项目，同时将项目维护到 GitHub 作为个人作品集的一部分。
