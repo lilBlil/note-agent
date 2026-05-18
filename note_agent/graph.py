@@ -9,8 +9,10 @@ from note_agent.prompts import (
     generate_outline_prompt,
     generate_initial_note_prompt,
     generate_search_queries_prompt,
+    verify_note_prompt,
     refine_note_prompt,
     finalize_note_prompt,
+    generate_title_prompt,
 )
 
 
@@ -86,8 +88,25 @@ def web_search_node(state: NoteResearchState):
     }
 
 
+def verify_note(state: NoteResearchState):
+    print("\n正在进行事实核验...\n")
+
+    search_text = "\n\n".join(state["search_results"])
+
+    report = ask_llm(
+        verify_note_prompt(
+            raw_input=state["raw_input"],
+            current_note=state["current_note"],
+            search_results=search_text,
+        )
+    )
+
+    return {"verification_report": report}
+
+
 def refine_note(state: NoteResearchState):
-    print("\n正在基于搜索结果迭代笔记...\n")
+    print("\n正在基于核验结果和搜索结果迭代笔记...\n")
+
     search_text = "\n\n".join(state["search_results"])
 
     new_note = ask_llm(
@@ -95,6 +114,7 @@ def refine_note(state: NoteResearchState):
             raw_input=state["raw_input"],
             current_note=state["current_note"],
             search_results=search_text,
+            verification_report=state["verification_report"],
         )
     )
 
@@ -123,7 +143,7 @@ def finalize_note(state: NoteResearchState):
 
 
 def save_markdown_node(state: NoteResearchState):
-    title = state["note_type"] or "research_note"
+    title = ask_llm(generate_title_prompt(state["final_note"])).strip()
     saved_path = save_markdown(title, state["final_note"])
     return {"saved_path": saved_path}
 
@@ -136,6 +156,7 @@ def build_graph():
     builder.add_node("generate_initial_note", generate_initial_note)
     builder.add_node("generate_search_queries", generate_search_queries)
     builder.add_node("web_search", web_search_node)
+    builder.add_node("verify_note", verify_note)
     builder.add_node("refine_note", refine_note)
     builder.add_node("finalize_note", finalize_note)
     builder.add_node("save_markdown", save_markdown_node)
@@ -145,7 +166,8 @@ def build_graph():
     builder.add_edge("generate_dynamic_outline", "generate_initial_note")
     builder.add_edge("generate_initial_note", "generate_search_queries")
     builder.add_edge("generate_search_queries", "web_search")
-    builder.add_edge("web_search", "refine_note")
+    builder.add_edge("web_search", "verify_note")
+    builder.add_edge("verify_note", "refine_note")
 
     builder.add_conditional_edges(
         "refine_note",

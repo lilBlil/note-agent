@@ -14,5 +14,7 @@ class NoteResearchState(TypedDict):
     search_results: List[str]
     sources: List[str]
 
+    verification_report: str
+
     final_note: str
     saved_path: str

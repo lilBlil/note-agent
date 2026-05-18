@@ -25,7 +25,7 @@ def main():
 
     raw_input = collect_input()
 
-    max_iterations = input("\n请输入迭代次数，建议 1-3：\n> ").strip()
+    max_iterations = input("\n请输入迭代次数：\n> ").strip()
 
     if not max_iterations.isdigit():
         raise ValueError("迭代次数必须是整数")

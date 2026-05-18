@@ -81,11 +81,16 @@ def generate_search_queries_prompt(current_note: str) -> str:
 """
 
 
-def refine_note_prompt(raw_input: str, current_note: str, search_results: str) -> str:
+def refine_note_prompt(
+    raw_input: str,
+    current_note: str,
+    search_results: str,
+    verification_report: str,
+) -> str:
     return f"""
 你是一个严谨的研究笔记 Agent。
 
-请基于用户输入、当前笔记和网络搜索结果，生成迭代后的新版 Markdown 笔记。
+请基于用户输入、当前笔记、网络搜索结果和事实核验报告，生成迭代后的新版 Markdown 笔记。
 
 用户输入：
 {raw_input}
@@ -96,13 +101,17 @@ def refine_note_prompt(raw_input: str, current_note: str, search_results: str) -
 网络搜索结果：
 {search_results}
 
+事实核验报告：
+{verification_report}
+
 要求：
-1. 可以动态调整笔记结构
-2. 可以新增、合并、重命名章节
-3. 只能使用用户输入和搜索结果支持的信息
-4. 保留具体事实、概念、流程和关键区别
-5. 不要使用固定模板
-6. 输出完整 Markdown 笔记
+1. 必须修正事实核验报告中指出的不一致内容
+2. 必须删除无法由用户输入或搜索结果支撑的具体事实
+3. 必须补充搜索结果中与主题高度相关的重要信息
+4. 可以动态调整笔记结构
+5. 可以新增、合并、重命名章节
+6. 不要使用固定模板
+7. 输出完整 Markdown 笔记
 """
 
 
@@ -111,6 +120,10 @@ def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
 
     return f"""
 请将下面笔记整理为最终 Markdown 版本。
+直接输出 Markdown 正文。
+不要输出解释性开场白。
+不要使用 ```markdown 代码块包裹。
+第一行必须是一级标题，以 # 开头。
 
 当前笔记：
 {current_note}
@@ -124,4 +137,45 @@ def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
 3. 语言清晰、具体
 4. 最后添加 Sources 章节
 5. Sources 使用给定链接
+"""
+
+
+def verify_note_prompt(raw_input: str, current_note: str, search_results: str) -> str:
+    return f"""
+你是一个严格的事实核验 Agent。
+
+请检查当前笔记中的所有事实性内容，判断其是否能够被“用户原始输入”或“网络搜索结果”支持。
+
+用户原始输入：
+{raw_input}
+
+当前笔记：
+{current_note}
+
+网络搜索结果：
+{search_results}
+
+要求：
+1. 检查笔记中是否存在与用户输入或搜索结果不一致的内容
+2. 检查是否存在没有来源支撑的具体事实
+3. 检查是否遗漏搜索结果中与主题高度相关的重要信息
+4. 输出需要修改、删除或补充的内容
+5. 不要重写整篇笔记，只输出核验报告
+6. 使用 Markdown
+"""
+
+
+def generate_title_prompt(final_note: str) -> str:
+    return f"""
+请为下面这篇笔记生成一个简洁、准确的文件名标题。
+
+要求：
+1. 标题要体现笔记内容主题
+2. 不超过 20 个汉字或 8 个英文单词
+3. 不要使用标点符号
+4. 不要包含日期和时间
+5. 只输出标题，不要解释
+
+笔记内容：
+{final_note[:2000]}
 """
