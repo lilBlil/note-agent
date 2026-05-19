@@ -19,9 +19,11 @@ from note_agent.prompts import (
     generate_title_prompt,
 )
 from note_agent.search import web_search
+from note_agent.tools import emit_node_start, emit_event
+
 
 def infer_note_type(state: NoteResearchState):
-    print("\n正在判断笔记类型...\n")
+    emit_node_start("infer_note_type", "正在判断笔记类型")
     note_type = ask_llm(
         infer_note_type_prompt(state["raw_input"]),
         provider=state["llm_provider"],
@@ -31,7 +33,7 @@ def infer_note_type(state: NoteResearchState):
 
 
 def generate_dynamic_outline(state: NoteResearchState):
-    print("\n正在生成动态笔记结构...\n")
+    emit_node_start("generate_dynamic_outline", "正在生成动态笔记结构")
     text = ask_llm(
         generate_outline_prompt(state["raw_input"], state["note_type"]),
         provider=state["llm_provider"],
@@ -52,7 +54,7 @@ def generate_dynamic_outline(state: NoteResearchState):
 
 
 def generate_initial_note(state: NoteResearchState):
-    print("\n正在生成笔记...\n")
+    emit_node_start("generate_initial_note", "正在生成笔记")
     outline_text = json.dumps(state["note_outline"], ensure_ascii=False, indent=2)
 
     note = ask_llm(
@@ -76,7 +78,7 @@ def generate_initial_note(state: NoteResearchState):
 
 
 def generate_search_queries(state: NoteResearchState):
-    print("\n正在生成本轮检索问题...\n")
+    emit_node_start("generate_search_queries", "正在分析信息缺口并生成检索问题")
 
     text = ask_llm(
         generate_search_queries_prompt(
@@ -111,20 +113,20 @@ def generate_search_queries(state: NoteResearchState):
 
 
 def web_search_node(state: NoteResearchState):
-    print(f"\n正在使用 {state['search_api']} 进行网络检索...\n")
-
-    if not state["search_queries"]:
-        print("本轮没有需要检索的信息缺口。")
-        return {
-            "search_results": [],
-            "sources": state.get("sources", []),
-        }
+    emit_node_start("web_search", f"正在使用 {state['search_api']} 进行网络检索")
 
     all_results = []
     all_sources = list(state.get("sources", []))
 
+    if not state["search_queries"]:
+        emit_event("info", text="本轮没有需要检索的信息缺口。")
+        return {
+            "search_results": [],
+            "sources": all_sources,
+        }
+
     for query in state["search_queries"]:
-        print(f"- Query: {query}")
+        emit_event("info", text=f"正在搜索：{query}")
 
         try:
             result_text, sources = web_search(
@@ -145,7 +147,7 @@ def web_search_node(state: NoteResearchState):
 
 
 def verify_note(state: NoteResearchState):
-    print("\n正在进行事实检验...\n")
+    emit_node_start("verify_note", "正在进行事实检验")
 
     search_text = "\n\n".join(state["search_results"])
 
@@ -163,7 +165,7 @@ def verify_note(state: NoteResearchState):
 
 
 def refine_note(state: NoteResearchState):
-    print("\n正在基于搜索结果和核验报告迭代笔记...\n")
+    emit_node_start("refine_note", "正在根据检索结果修正并补充笔记")
 
     search_text = "\n\n".join(state["search_results"])
 
@@ -191,7 +193,7 @@ def route_iteration(state: NoteResearchState) -> str:
 
 
 def finalize_note(state: NoteResearchState):
-    print("\n正在生成最终笔记...\n")
+    emit_node_start("finalize_note", "正在生成最终笔记")
 
     final_note = ask_llm(
         finalize_note_prompt(
@@ -206,7 +208,7 @@ def finalize_note(state: NoteResearchState):
 
 
 def save_markdown_node(state: NoteResearchState):
-    print("\n正在生成文件名并保存 Markdown...\n")
+    emit_node_start("save_markdown", "正在生成文件名并保存 Markdown")
 
     title = ask_llm(
         generate_title_prompt(state["final_note"]),

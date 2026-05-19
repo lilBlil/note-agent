@@ -4,63 +4,28 @@
 
 项目目标不是简单整理文本，而是根据用户输入自动生成研究笔记，通过网络检索补充信息，并在每轮迭代中进行事实校验与内容修正，最终生成结构化 Markdown 笔记。
 
-当前主版本为 **v3.2**，采用 **LangGraph 状态机架构**，支持动态笔记结构、网络检索、事实检验、多轮迭代、多模型选择与多搜索后端扩展。
+当前主版本为 **v3.3.0**，采用 **LangGraph 状态机架构**，支持动态笔记结构、网络检索、事实检验、多轮迭代、多模型选择、多搜索后端扩展，以及 Streamlit 可视化交互界面。
 
 ---
 
-## v3.2 更新内容
+## v3.3.0 更新内容
 
-v3.2 在 v3.1 的事实检验流程基础上，引入多模型、多搜索后端与前后端解耦架构，并优化检索逻辑，使搜索围绕笔记信息差展开，而非固定模板扩充。
+v3.3.0 在 v3.2 的多模型、多搜索后端和 service layer 基础上，新增了 **Streamlit 可视化交互界面**，使用户可以通过网页界面运行 Agent，并实时观察状态机运行过程。
 
-### 多模型支持
+### 新增功能
 
-支持运行时选择不同 LLM Provider：
-
-- DeepSeek Chat
-- OpenAI GPT
-- Qwen（通义千问）
-- Moonshot（Kimi）
-- Zhipu GLM
-- SiliconFlow
-
-支持统一模型接口切换，便于后续扩展和前端集成。
-
----
-
-### 多搜索后端
-
-支持运行时选择不同搜索系统：
-
-- DuckDuckGo
-- Tavily
-- Perplexity
-- SearXNG
-
-支持未来继续扩展自定义搜索引擎。
-
----
-
-### Query 去重
-
-新增：
-
-- 已使用 Query 状态记录
-- 自动去重
-- 避免语义重复搜索
-- 保证每轮检索具有新的信息增量
-
----
-
-### 前后端解耦
-
-新增：
-
-- `schemas.py`
-- `service.py`
-- `config.py`
-- `search.py`
-
-后续 Streamlit、FastAPI、React 前端可直接复用核心 Agent。
+- 新增 `app.py` Streamlit 前端入口
+- 支持在网页中输入文本、关键词或研究主题
+- 支持在侧边栏选择 LLM Provider
+- 支持在侧边栏选择 Search API
+- 支持设置最大迭代次数
+- 将运行过程拆分为“运行节点”和“当前步骤输出”
+- 在输入区域下方展示 LangGraph 运行节点
+- 在右侧展示当前节点的逐字流式输出
+- 展示检索 Query、搜索过程和 Sources
+- 所有长文本内容均放入可滚动文本框，便于阅读和调试
+- 支持最终 Markdown 笔记预览
+- 保留原有 CLI 入口 `main.py`
 
 ---
 
@@ -79,6 +44,9 @@ v3.2 在 v3.1 的事实检验流程基础上，引入多模型、多搜索后端
 - 支持 Query 去重
 - 支持多 LLM Provider
 - 支持多搜索后端
+- 支持 Streamlit 可视化交互界面
+- 支持运行节点展示
+- 支持当前步骤逐字流式输出
 - 自动生成体现主题的文件名
 - 自动清理 Markdown 代码块包裹
 - 自动保存 Markdown 文件
@@ -98,6 +66,7 @@ v3.2 在 v3.1 的事实检验流程基础上，引入多模型、多搜索后端
 - Tavily
 - Perplexity
 - SearXNG
+- Streamlit
 - python-dotenv
 - Markdown
 
@@ -114,6 +83,7 @@ note-agent/
 ├─ requirements.txt
 ├─ README.md
 ├─ main.py
+├─ app.py
 │
 ├─ notes/
 │
@@ -171,44 +141,42 @@ L --> M[保存本地笔记]
 
 ---
 
-## 输入示例
+## Streamlit 可视化界面
 
-输入：
+v3.3.0 新增网页交互界面，用于替代纯命令行操作。
+
+界面主要包括：
 
 ```text
-LangChain Agent
-DeepSeek API
-LangGraph workflow
-Memory
-RAG
+左侧 Sidebar：
+- LLM Provider 选择
+- Search API 选择
+- 最大迭代次数设置
+- 当前功能说明
 
-END
+主页面左侧：
+- 输入文本 / 关键词
+- 运行节点展示
+
+主页面右侧：
+- 当前步骤逐字输出
+- 检索 Query / 搜索过程
+- Sources
+
+底部：
+- 最终 Markdown 笔记预览
 ```
 
-设置迭代次数：
+运行方式：
 
-```text
-2
+```bash
+streamlit run app.py
 ```
 
-Agent 自动执行：
+启动后浏览器会打开：
 
 ```text
-生成初版笔记
-→ 判断知识缺口
-→ 自动检索
-→ 事实检验
-→ 修正并更新笔记
-→ 第二轮迭代
-→ 生成最终 Markdown
-→ 保存本地文件
-```
-
-输出：
-
-```text
-notes/
-└── LangChain_Agent学习笔记_20260518_210012.md
+http://localhost:8501
 ```
 
 ---
@@ -259,17 +227,40 @@ DEFAULT_LLM_PROVIDER=deepseek
 DEFAULT_MAX_ITERATIONS=2
 ```
 
-运行：
+---
+
+## 运行方式
+
+### 命令行运行
 
 ```bash
 python main.py
+```
+
+### 可视化界面运行
+
+```bash
+streamlit run app.py
 ```
 
 ---
 
 ## 版本说明
 
-### v3.2（当前版本）
+### v3.3.0（当前版本）
+
+新增：
+
+- Streamlit 可视化界面
+- 运行节点展示
+- 当前步骤逐字流式输出
+- 检索 Query / 搜索过程展示
+- Sources 展示
+- 最终 Markdown 预览
+- 可滚动文本框 UI
+- 保留 CLI 与 service layer 复用能力
+
+### v3.2
 
 新增：
 
@@ -307,12 +298,13 @@ python main.py
 
 ## Roadmap
 
-### v3.3
+### v3.4
 
-- 节点级流式输出
-- 运行日志
+- 运行日志持久化
+- 节点耗时统计
 - 搜索缓存
-- 调试面板
+- 中间版本笔记保存
+- 调试面板增强
 
 ### v4
 
@@ -328,7 +320,7 @@ python main.py
 - 多 Agent 协作
 - 自动学习规划
 - 知识图谱构建
-- 可视化前端
+- 更完整的前端应用
 
 ---
 
