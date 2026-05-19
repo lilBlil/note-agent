@@ -3,7 +3,11 @@ import json
 from langgraph.graph import StateGraph, START, END
 
 from note_agent.state import NoteResearchState
-from note_agent.tools import ask_llm, web_search, save_markdown
+from note_agent.tools import (
+    ask_llm,
+    save_markdown,
+    normalize_query,
+)
 from note_agent.prompts import (
     infer_note_type_prompt,
     generate_outline_prompt,
@@ -14,17 +18,25 @@ from note_agent.prompts import (
     finalize_note_prompt,
     generate_title_prompt,
 )
-
+from note_agent.search import web_search
 
 def infer_note_type(state: NoteResearchState):
     print("\n正在判断笔记类型...\n")
-    note_type = ask_llm(infer_note_type_prompt(state["raw_input"]))
+    note_type = ask_llm(
+        infer_note_type_prompt(state["raw_input"]),
+        provider=state["llm_provider"],
+        stream=True,
+    )
     return {"note_type": note_type.strip()}
 
 
 def generate_dynamic_outline(state: NoteResearchState):
     print("\n正在生成动态笔记结构...\n")
-    text = ask_llm(generate_outline_prompt(state["raw_input"], state["note_type"]))
+    text = ask_llm(
+        generate_outline_prompt(state["raw_input"], state["note_type"]),
+        provider=state["llm_provider"],
+        stream=True,
+    )
 
     try:
         outline = json.loads(text)
@@ -48,37 +60,81 @@ def generate_initial_note(state: NoteResearchState):
             raw_input=state["raw_input"],
             note_type=state["note_type"],
             outline=outline_text,
-        )
+        ),
+        provider=state["llm_provider"],
+        stream=True,
     )
 
     return {
         "current_note": note,
         "iteration_count": 0,
         "search_queries": [],
+        "used_search_queries": [],
         "search_results": [],
         "sources": [],
     }
 
 
 def generate_search_queries(state: NoteResearchState):
-    print("\n正在生成检索问题...\n")
-    text = ask_llm(generate_search_queries_prompt(state["current_note"]))
+    print("\n正在生成本轮检索问题...\n")
 
-    queries = [
-        line.strip()
+    text = ask_llm(
+        generate_search_queries_prompt(
+            current_note=state["current_note"],
+            used_queries=state.get("used_search_queries", []),
+        ),
+        provider=state["llm_provider"],
+        stream=True,
+    )
+
+    raw_queries = [
+        line.strip("- ").strip()
         for line in text.splitlines()
         if line.strip()
     ]
 
-    return {"search_queries": queries[:3]}
+    used = set(normalize_query(q) for q in state.get("used_search_queries", []))
+    new_queries = []
+
+    for q in raw_queries:
+        normalized = normalize_query(q)
+        if normalized and normalized not in used:
+            new_queries.append(q)
+            used.add(normalized)
+
+    selected_queries = new_queries[:3]
+
+    return {
+        "search_queries": selected_queries,
+        "used_search_queries": state.get("used_search_queries", []) + selected_queries,
+    }
 
 
 def web_search_node(state: NoteResearchState):
+    print(f"\n正在使用 {state['search_api']} 进行网络检索...\n")
+
+    if not state["search_queries"]:
+        print("本轮没有需要检索的信息缺口。")
+        return {
+            "search_results": [],
+            "sources": state.get("sources", []),
+        }
+
     all_results = []
     all_sources = list(state.get("sources", []))
 
     for query in state["search_queries"]:
-        result_text, sources = web_search(query)
+        print(f"- Query: {query}")
+
+        try:
+            result_text, sources = web_search(
+                query,
+                search_api=state["search_api"],
+            )
+        except Exception as e:
+            result_text = f"搜索失败：{e}"
+            sources = []
+
         all_results.append(f"## Query: {query}\n\n{result_text}")
         all_sources.extend(sources)
 
@@ -89,7 +145,7 @@ def web_search_node(state: NoteResearchState):
 
 
 def verify_note(state: NoteResearchState):
-    print("\n正在进行事实核验...\n")
+    print("\n正在进行事实检验...\n")
 
     search_text = "\n\n".join(state["search_results"])
 
@@ -98,14 +154,16 @@ def verify_note(state: NoteResearchState):
             raw_input=state["raw_input"],
             current_note=state["current_note"],
             search_results=search_text,
-        )
+        ),
+        provider=state["llm_provider"],
+        stream=True,
     )
 
     return {"verification_report": report}
 
 
 def refine_note(state: NoteResearchState):
-    print("\n正在基于核验结果和搜索结果迭代笔记...\n")
+    print("\n正在基于搜索结果和核验报告迭代笔记...\n")
 
     search_text = "\n\n".join(state["search_results"])
 
@@ -115,7 +173,9 @@ def refine_note(state: NoteResearchState):
             current_note=state["current_note"],
             search_results=search_text,
             verification_report=state["verification_report"],
-        )
+        ),
+        provider=state["llm_provider"],
+        stream=True,
     )
 
     return {
@@ -132,19 +192,30 @@ def route_iteration(state: NoteResearchState) -> str:
 
 def finalize_note(state: NoteResearchState):
     print("\n正在生成最终笔记...\n")
+
     final_note = ask_llm(
         finalize_note_prompt(
             current_note=state["current_note"],
             sources=state["sources"],
-        )
+        ),
+        provider=state["llm_provider"],
+        stream=True,
     )
 
     return {"final_note": final_note}
 
 
 def save_markdown_node(state: NoteResearchState):
-    title = ask_llm(generate_title_prompt(state["final_note"])).strip()
+    print("\n正在生成文件名并保存 Markdown...\n")
+
+    title = ask_llm(
+        generate_title_prompt(state["final_note"]),
+        provider=state["llm_provider"],
+        stream=True,
+    ).strip()
+
     saved_path = save_markdown(title, state["final_note"])
+
     return {"saved_path": saved_path}
 
 

@@ -63,21 +63,54 @@ def generate_initial_note_prompt(raw_input: str, note_type: str, outline: str) -
 2. 只使用用户输入中已有的信息
 3. 不要编造事实
 4. 内容具体，不要空泛
+5. 不要使用 ```markdown 代码块包裹
+6. 第一行必须是一级标题，以 # 开头
 """
 
 
-def generate_search_queries_prompt(current_note: str) -> str:
+def generate_search_queries_prompt(current_note: str, used_queries: list[str]) -> str:
+    used_text = "\n".join(f"- {q}" for q in used_queries) if used_queries else "暂无"
+
     return f"""
-请阅读当前笔记，判断哪些地方需要网络检索补充事实信息。
+请阅读当前笔记，判断还缺少哪些必要信息，并据此生成搜索 query。
 
 当前笔记：
 {current_note}
 
+已经使用过的检索问题：
+{used_text}
+
 要求：
-1. 生成 3 个搜索 query
-2. query 要具体
-3. 每行一个 query
-4. 不要编号
+1. 只针对当前笔记的信息缺口生成 query
+2. 不要重复已经使用过的 query
+3. 如果当前笔记已经足够完整，可以不输出任何 query
+4. 每行一个 query
+5. 不要编号，不要解释
+"""
+
+
+def verify_note_prompt(raw_input: str, current_note: str, search_results: str) -> str:
+    return f"""
+你是一个严格的事实核验 Agent。
+
+请检查当前笔记中的事实性内容，判断其是否能够被“用户原始输入”或“网络搜索结果”支持。
+
+用户原始输入：
+{raw_input}
+
+当前笔记：
+{current_note}
+
+网络搜索结果：
+{search_results}
+
+要求：
+1. 检查笔记中是否存在与用户输入或搜索结果不一致的内容
+2. 检查是否存在没有来源支撑的具体事实
+3. 检查是否遗漏搜索结果中与主题高度相关的重要信息
+4. 输出需要修改、删除或补充的内容
+5. 不要重写整篇笔记，只输出核验报告
+6. 使用 Markdown
 """
 
 
@@ -111,7 +144,9 @@ def refine_note_prompt(
 4. 可以动态调整笔记结构
 5. 可以新增、合并、重命名章节
 6. 不要使用固定模板
-7. 输出完整 Markdown 笔记
+7. 不要使用 ```markdown 代码块包裹
+8. 第一行必须是一级标题，以 # 开头
+9. 输出完整 Markdown 笔记
 """
 
 
@@ -120,10 +155,6 @@ def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
 
     return f"""
 请将下面笔记整理为最终 Markdown 版本。
-直接输出 Markdown 正文。
-不要输出解释性开场白。
-不要使用 ```markdown 代码块包裹。
-第一行必须是一级标题，以 # 开头。
 
 当前笔记：
 {current_note}
@@ -137,31 +168,10 @@ def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
 3. 语言清晰、具体
 4. 最后添加 Sources 章节
 5. Sources 使用给定链接
-"""
-
-
-def verify_note_prompt(raw_input: str, current_note: str, search_results: str) -> str:
-    return f"""
-你是一个严格的事实核验 Agent。
-
-请检查当前笔记中的所有事实性内容，判断其是否能够被“用户原始输入”或“网络搜索结果”支持。
-
-用户原始输入：
-{raw_input}
-
-当前笔记：
-{current_note}
-
-网络搜索结果：
-{search_results}
-
-要求：
-1. 检查笔记中是否存在与用户输入或搜索结果不一致的内容
-2. 检查是否存在没有来源支撑的具体事实
-3. 检查是否遗漏搜索结果中与主题高度相关的重要信息
-4. 输出需要修改、删除或补充的内容
-5. 不要重写整篇笔记，只输出核验报告
-6. 使用 Markdown
+6. 直接输出 Markdown 正文
+7. 不要输出解释性开场白
+8. 不要使用 ```markdown 代码块包裹
+9. 第一行必须是一级标题，以 # 开头
 """
 
 
