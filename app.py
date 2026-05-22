@@ -1,11 +1,20 @@
 # app.py
-# Note Agent v3.3.0 Streamlit UI with node-level and token-level streaming
+# Note Agent Streamlit UI with node-level and token-level streaming.
+# This version keeps input_loader.py support:
+# - manual text
+# - uploaded .txt / .md files
+# - webpage URLs
 
 import html
 
 import streamlit as st
 
 from note_agent import __version__
+from note_agent.input_loader import (
+    build_combined_input,
+    fetch_webpage_text,
+    read_uploaded_text_file,
+)
 from note_agent.schemas import NoteAgentRequest
 from note_agent.service import stream_note_agent_events
 
@@ -62,10 +71,21 @@ def render_node_list(node_records: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def parse_urls(raw_urls: str) -> list[str]:
+    """支持换行或英文逗号分隔 URL。"""
+    raw_urls = raw_urls or ""
+    parts = []
+
+    for line in raw_urls.splitlines():
+        parts.extend(item.strip() for item in line.split(","))
+
+    return [item for item in parts if item]
+
+
 def main():
     st.title(f"📝 Note Agent v{__version__}")
     st.caption(
-        "LangGraph-based research note agent with search, verification and iterative refinement."
+        "LangGraph-based research note agent with search, verification, evidence cache and run logs."
     )
 
     with st.sidebar:
@@ -95,12 +115,12 @@ def main():
             index=0,
         )
 
-        max_iterations = st.slider(
+        max_iterations = st.number_input(
             "Max Iterations",
-            min_value=1,
-            max_value=5,
+            min_value=0,
             value=2,
             step=1,
+            help="0 表示不进行检索-核验-修正迭代，直接整理并保存初版笔记。",
         )
 
         st.divider()
@@ -108,10 +128,16 @@ def main():
         st.markdown("### 当前功能")
         st.markdown(
             """
+            - 手动文本输入
+            - `.txt` / `.md` 文件上传
+            - 网页 URL 导入
             - 动态笔记结构生成
-            - 网络检索补充
+            - 结构化网络检索
+            - 搜索缓存
             - 事实检验
             - 多轮迭代
+            - 中间版本保存
+            - 运行日志持久化
             - Markdown 自动保存
             - 运行节点展示
             - 逐字流式输出
@@ -121,11 +147,11 @@ def main():
     left_col, right_col = st.columns([1, 1])
 
     with left_col:
-        st.subheader("输入文本 / 关键词")
+        st.subheader("输入来源")
 
-        raw_input = st.text_area(
-            label="请输入研究主题、关键词或原始笔记",
-            height=300,
+        manual_text = st.text_area(
+            label="手动输入文本 / 关键词",
+            height=180,
             placeholder=(
                 "例如：\n"
                 "LangChain Agent\n"
@@ -133,6 +159,18 @@ def main():
                 "Memory\n"
                 "RAG\n"
             ),
+        )
+
+        uploaded_files = st.file_uploader(
+            "上传 .txt / .md 文件",
+            type=["txt", "md"],
+            accept_multiple_files=True,
+        )
+
+        raw_urls = st.text_area(
+            label="网页 URL",
+            height=90,
+            placeholder="多个 URL 可换行填写，也可用英文逗号分隔",
         )
 
         run_button = st.button(
@@ -144,7 +182,7 @@ def main():
         st.subheader("运行节点")
         node_area = st.empty()
         node_area.markdown(
-            render_scroll_box("等待运行...", height=360),
+            render_scroll_box("等待运行...", height=300),
             unsafe_allow_html=True,
         )
 
@@ -153,11 +191,11 @@ def main():
 
         step_area = st.empty()
         step_area.markdown(
-            render_scroll_box("运行后，这里会显示当前节点的逐字输出。", height=360),
+            render_scroll_box("运行后，这里会显示当前节点的逐字输出。", height=300),
             unsafe_allow_html=True,
         )
 
-        st.subheader("检索 Query / 搜索过程")
+        st.subheader("检索 Query / 搜索过程 / 中间版本")
         search_area = st.empty()
         search_area.markdown(
             render_scroll_box("暂无检索信息。", height=180),
@@ -190,13 +228,34 @@ def main():
     result_area = st.empty()
 
     if run_button:
-        if not raw_input.strip():
-            st.error("输入内容不能为空。")
+        file_texts = []
+        webpage_texts = []
+
+        try:
+            for uploaded_file in uploaded_files or []:
+                text = read_uploaded_text_file(
+                    uploaded_file.name,
+                    uploaded_file.getvalue(),
+                )
+                file_texts.append((uploaded_file.name, text))
+
+            for url in parse_urls(raw_urls):
+                text = fetch_webpage_text(url)
+                webpage_texts.append((url, text))
+
+            raw_input = build_combined_input(
+                manual_text=manual_text,
+                file_texts=file_texts,
+                webpage_texts=webpage_texts,
+            )
+
+        except Exception as e:
+            st.error(f"输入加载失败：{e}")
             return
 
         request = NoteAgentRequest(
-            raw_input=raw_input.strip(),
-            max_iterations=max_iterations,
+            raw_input=raw_input,
+            max_iterations=int(max_iterations),
             llm_provider=llm_provider,
             search_api=search_api,
         )
@@ -205,7 +264,6 @@ def main():
         current_step_output = ""
         search_logs = []
         sources = []
-        latest_state = None
 
         try:
             for event in stream_note_agent_events(request):
@@ -247,17 +305,31 @@ def main():
                     result_area.markdown("**保存路径：**")
                     result_area.code(latest_state.get("saved_path", ""))
 
+                    result_area.markdown("**运行 ID：**")
+                    result_area.code(event.get("run_id", ""))
+
+                    result_area.markdown("**运行日志目录：**")
+                    result_area.code(event.get("run_log_dir", ""))
+
+                    if latest_state.get("intermediate_paths"):
+                        result_area.markdown("**中间版本：**")
+                        result_area.code("\n".join(latest_state.get("intermediate_paths", [])))
+
                 elif event_type == "error":
                     result_area.error(f"运行失败：{event.get('message')}")
+                    result_area.markdown("**运行 ID：**")
+                    result_area.code(event.get("run_id", ""))
+                    result_area.markdown("**运行日志目录：**")
+                    result_area.code(event.get("run_log_dir", ""))
                     break
 
                 node_area.markdown(
-                    render_scroll_box(render_node_list(node_records), height=360),
+                    render_scroll_box(render_node_list(node_records), height=300),
                     unsafe_allow_html=True,
                 )
 
                 step_area.markdown(
-                    render_scroll_box(current_step_output, height=360),
+                    render_scroll_box(current_step_output, height=300),
                     unsafe_allow_html=True,
                 )
 

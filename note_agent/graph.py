@@ -2,24 +2,43 @@ import json
 
 from langgraph.graph import StateGraph, START, END
 
+from note_agent.prompts import (
+    finalize_note_prompt,
+    generate_initial_note_prompt,
+    generate_outline_prompt,
+    generate_search_queries_prompt,
+    generate_title_prompt,
+    infer_note_type_prompt,
+    refine_note_prompt,
+    verify_note_prompt,
+)
+from note_agent.search import (
+    collect_source_urls,
+    format_search_results_for_prompt,
+    web_search,
+)
 from note_agent.state import NoteResearchState
+from note_agent.storage import append_event, save_intermediate_note
 from note_agent.tools import (
     ask_llm,
-    save_markdown,
+    emit_event,
+    emit_node_start,
     normalize_query,
+    save_markdown,
 )
-from note_agent.prompts import (
-    infer_note_type_prompt,
-    generate_outline_prompt,
-    generate_initial_note_prompt,
-    generate_search_queries_prompt,
-    verify_note_prompt,
-    refine_note_prompt,
-    finalize_note_prompt,
-    generate_title_prompt,
-)
-from note_agent.search import web_search
-from note_agent.tools import emit_node_start, emit_event
+
+
+def _dedupe_urls(urls: list[str]) -> list[str]:
+    seen = set()
+    result = []
+
+    for url in urls:
+        url = (url or "").strip()
+        if url and url not in seen:
+            result.append(url)
+            seen.add(url)
+
+    return result
 
 
 def infer_note_type(state: NoteResearchState):
@@ -67,14 +86,34 @@ def generate_initial_note(state: NoteResearchState):
         stream=True,
     )
 
+    intermediate_path = save_intermediate_note(
+        state["run_id"],
+        "iteration_0_initial",
+        note,
+    )
+
+    emit_event("info", text=f"已保存初版中间笔记：{intermediate_path}")
+
     return {
         "current_note": note,
         "iteration_count": 0,
         "search_queries": [],
         "used_search_queries": [],
         "search_results": [],
+        "evidence_items": [],
         "sources": [],
+        "intermediate_paths": [intermediate_path],
     }
+
+
+def route_after_initial_note(state: NoteResearchState) -> str:
+    """
+    max_iterations = 0 时跳过检索、核验和修正，直接生成最终 Markdown。
+    max_iterations > 0 时进入原有迭代流程。
+    """
+    if state["max_iterations"] <= 0:
+        return "finalize"
+    return "continue"
 
 
 def generate_search_queries(state: NoteResearchState):
@@ -115,41 +154,45 @@ def generate_search_queries(state: NoteResearchState):
 def web_search_node(state: NoteResearchState):
     emit_node_start("web_search", f"正在使用 {state['search_api']} 进行网络检索")
 
-    all_results = []
+    current_round_results = []
+    evidence_items = list(state.get("evidence_items", []))
     all_sources = list(state.get("sources", []))
 
     if not state["search_queries"]:
         emit_event("info", text="本轮没有需要检索的信息缺口。")
         return {
             "search_results": [],
-            "sources": all_sources,
+            "evidence_items": evidence_items,
+            "sources": _dedupe_urls(all_sources),
         }
 
     for query in state["search_queries"]:
         emit_event("info", text=f"正在搜索：{query}")
 
         try:
-            result_text, sources = web_search(
+            results = web_search(
                 query,
                 search_api=state["search_api"],
             )
         except Exception as e:
-            result_text = f"搜索失败：{e}"
-            sources = []
+            emit_event("info", text=f"搜索失败：{query}；原因：{e}")
+            results = []
 
-        all_results.append(f"## Query: {query}\n\n{result_text}")
-        all_sources.extend(sources)
+        current_round_results.extend(results)
+        evidence_items.extend(results)
+        all_sources.extend(collect_source_urls(results))
 
     return {
-        "search_results": all_results,
-        "sources": all_sources,
+        "search_results": current_round_results,
+        "evidence_items": evidence_items,
+        "sources": _dedupe_urls(all_sources),
     }
 
 
 def verify_note(state: NoteResearchState):
     emit_node_start("verify_note", "正在进行事实检验")
 
-    search_text = "\n\n".join(state["search_results"])
+    search_text = format_search_results_for_prompt(state["search_results"])
 
     report = ask_llm(
         verify_note_prompt(
@@ -167,7 +210,8 @@ def verify_note(state: NoteResearchState):
 def refine_note(state: NoteResearchState):
     emit_node_start("refine_note", "正在根据检索结果修正并补充笔记")
 
-    search_text = "\n\n".join(state["search_results"])
+    search_text = format_search_results_for_prompt(state["search_results"])
+    next_iteration = state["iteration_count"] + 1
 
     new_note = ask_llm(
         refine_note_prompt(
@@ -180,9 +224,18 @@ def refine_note(state: NoteResearchState):
         stream=True,
     )
 
+    intermediate_path = save_intermediate_note(
+        state["run_id"],
+        f"iteration_{next_iteration}_refined",
+        new_note,
+    )
+
+    emit_event("info", text=f"已保存第 {next_iteration} 轮中间笔记：{intermediate_path}")
+
     return {
         "current_note": new_note,
-        "iteration_count": state["iteration_count"] + 1,
+        "iteration_count": next_iteration,
+        "intermediate_paths": state.get("intermediate_paths", []) + [intermediate_path],
     }
 
 
@@ -204,7 +257,18 @@ def finalize_note(state: NoteResearchState):
         stream=True,
     )
 
-    return {"final_note": final_note}
+    intermediate_path = save_intermediate_note(
+        state["run_id"],
+        "final",
+        final_note,
+    )
+
+    emit_event("info", text=f"已保存最终中间版本：{intermediate_path}")
+
+    return {
+        "final_note": final_note,
+        "intermediate_paths": state.get("intermediate_paths", []) + [intermediate_path],
+    }
 
 
 def save_markdown_node(state: NoteResearchState):
@@ -217,6 +281,14 @@ def save_markdown_node(state: NoteResearchState):
     ).strip()
 
     saved_path = save_markdown(title, state["final_note"])
+
+    append_event(
+        state["run_id"],
+        {
+            "type": "saved",
+            "saved_path": saved_path,
+        },
+    )
 
     return {"saved_path": saved_path}
 
@@ -237,7 +309,16 @@ def build_graph():
     builder.add_edge(START, "infer_note_type")
     builder.add_edge("infer_note_type", "generate_dynamic_outline")
     builder.add_edge("generate_dynamic_outline", "generate_initial_note")
-    builder.add_edge("generate_initial_note", "generate_search_queries")
+
+    builder.add_conditional_edges(
+        "generate_initial_note",
+        route_after_initial_note,
+        {
+            "continue": "generate_search_queries",
+            "finalize": "finalize_note",
+        },
+    )
+
     builder.add_edge("generate_search_queries", "web_search")
     builder.add_edge("web_search", "verify_note")
     builder.add_edge("verify_note", "refine_note")

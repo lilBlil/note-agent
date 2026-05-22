@@ -36,6 +36,7 @@ def generate_outline_prompt(raw_input: str, note_type: str) -> str:
 3. 每个章节应服务于该主题本身
 4. 输出 JSON 数组
 5. 每个元素包含 title 和 purpose
+6. 只输出 JSON，不要输出解释
 
 示例格式：
 [
@@ -86,6 +87,7 @@ def generate_search_queries_prompt(current_note: str, used_queries: list[str]) -
 3. 如果当前笔记已经足够完整，可以不输出任何 query
 4. 每行一个 query
 5. 不要编号，不要解释
+6. 每轮最多生成 3 个高价值 query
 """
 
 
@@ -93,7 +95,7 @@ def verify_note_prompt(raw_input: str, current_note: str, search_results: str) -
     return f"""
 你是一个严格的事实核验 Agent。
 
-请检查当前笔记中的事实性内容，判断其是否能够被“用户原始输入”或“网络搜索结果”支持。
+请检查当前笔记中的事实性内容，判断其是否能够被“用户原始输入”或“结构化搜索结果”支持。
 
 用户原始输入：
 {raw_input}
@@ -101,16 +103,17 @@ def verify_note_prompt(raw_input: str, current_note: str, search_results: str) -
 当前笔记：
 {current_note}
 
-网络搜索结果：
+结构化搜索结果：
 {search_results}
 
 要求：
 1. 检查笔记中是否存在与用户输入或搜索结果不一致的内容
 2. 检查是否存在没有来源支撑的具体事实
 3. 检查是否遗漏搜索结果中与主题高度相关的重要信息
-4. 输出需要修改、删除或补充的内容
-5. 不要重写整篇笔记，只输出核验报告
-6. 使用 Markdown
+4. 对每个问题尽量指出支持或冲突的来源编号，例如 [S1]、[S2]
+5. 输出需要修改、删除或补充的内容
+6. 不要重写整篇笔记，只输出核验报告
+7. 使用 Markdown
 """
 
 
@@ -123,7 +126,7 @@ def refine_note_prompt(
     return f"""
 你是一个严谨的研究笔记 Agent。
 
-请基于用户输入、当前笔记、网络搜索结果和事实核验报告，生成迭代后的新版 Markdown 笔记。
+请基于用户输入、当前笔记、结构化搜索结果和事实核验报告，生成迭代后的新版 Markdown 笔记。
 
 用户输入：
 {raw_input}
@@ -131,7 +134,7 @@ def refine_note_prompt(
 当前笔记：
 {current_note}
 
-网络搜索结果：
+结构化搜索结果：
 {search_results}
 
 事实核验报告：
@@ -141,17 +144,18 @@ def refine_note_prompt(
 1. 必须修正事实核验报告中指出的不一致内容
 2. 必须删除无法由用户输入或搜索结果支撑的具体事实
 3. 必须补充搜索结果中与主题高度相关的重要信息
-4. 可以动态调整笔记结构
-5. 可以新增、合并、重命名章节
-6. 不要使用固定模板
-7. 不要使用 ```markdown 代码块包裹
-8. 第一行必须是一级标题，以 # 开头
-9. 输出完整 Markdown 笔记
+4. 对新增的外部事实，尽量在句尾标注来源编号，例如 [S1]
+5. 可以动态调整笔记结构
+6. 可以新增、合并、重命名章节
+7. 不要使用固定模板
+8. 不要使用 ```markdown 代码块包裹
+9. 第一行必须是一级标题，以 # 开头
+10. 输出完整 Markdown 笔记
 """
 
 
 def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
-    source_text = "\n".join(f"- {s}" for s in sorted(set(sources)))
+    source_text = "\n".join(f"- {s}" for s in sorted(set(sources))) if sources else "无外部来源"
 
     return f"""
 请将下面笔记整理为最终 Markdown 版本。
@@ -166,12 +170,13 @@ def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
 1. 保持结构灵活
 2. 删除重复内容
 3. 语言清晰、具体
-4. 最后添加 Sources 章节
+4. 如果存在来源链接，最后添加 Sources 章节
 5. Sources 使用给定链接
-6. 直接输出 Markdown 正文
-7. 不要输出解释性开场白
-8. 不要使用 ```markdown 代码块包裹
-9. 第一行必须是一级标题，以 # 开头
+6. 如果没有来源链接，不要编造 Sources
+7. 直接输出 Markdown 正文
+8. 不要输出解释性开场白
+9. 不要使用 ```markdown 代码块包裹
+10. 第一行必须是一级标题，以 # 开头
 """
 
 

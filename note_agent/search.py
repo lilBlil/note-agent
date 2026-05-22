@@ -1,29 +1,34 @@
+from __future__ import annotations
+
 import os
-from typing import Tuple
 
 import requests
 from ddgs import DDGS
 
+from note_agent.models import SearchResultItem, now_iso
+from note_agent.storage import load_search_cache, save_search_cache
 
-def search_duckduckgo(query: str, max_results: int = 5) -> Tuple[str, list[str]]:
+
+def search_duckduckgo(query: str, max_results: int = 5) -> list[SearchResultItem]:
     results = []
-    sources = []
 
     with DDGS() as ddgs:
         for item in ddgs.text(query, max_results=max_results):
-            title = item.get("title", "")
-            body = item.get("body", "")
-            href = item.get("href", "")
+            results.append(
+                SearchResultItem(
+                    query=query,
+                    title=item.get("title", "") or "",
+                    snippet=item.get("body", "") or "",
+                    url=item.get("href", "") or "",
+                    search_api="duckduckgo",
+                    retrieved_at=now_iso(),
+                )
+            )
 
-            results.append(f"标题：{title}\n摘要：{body}\n链接：{href}")
-
-            if href:
-                sources.append(href)
-
-    return "\n\n".join(results), sources
+    return results
 
 
-def search_tavily(query: str, max_results: int = 5) -> Tuple[str, list[str]]:
+def search_tavily(query: str, max_results: int = 5) -> list[SearchResultItem]:
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
         raise ValueError("未找到 TAVILY_API_KEY，请检查 .env 文件")
@@ -43,23 +48,20 @@ def search_tavily(query: str, max_results: int = 5) -> Tuple[str, list[str]]:
     data = response.json()
     items = data.get("results", [])
 
-    results = []
-    sources = []
-
-    for item in items:
-        title = item.get("title", "")
-        content = item.get("content", "")
-        url = item.get("url", "")
-
-        results.append(f"标题：{title}\n摘要：{content}\n链接：{url}")
-
-        if url:
-            sources.append(url)
-
-    return "\n\n".join(results), sources
+    return [
+        SearchResultItem(
+            query=query,
+            title=item.get("title", "") or "",
+            snippet=item.get("content", "") or "",
+            url=item.get("url", "") or "",
+            search_api="tavily",
+            retrieved_at=now_iso(),
+        )
+        for item in items
+    ]
 
 
-def search_perplexity(query: str, max_results: int = 5) -> Tuple[str, list[str]]:
+def search_perplexity(query: str, max_results: int = 5) -> list[SearchResultItem]:
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
         raise ValueError("未找到 PERPLEXITY_API_KEY，请检查 .env 文件")
@@ -90,15 +92,34 @@ def search_perplexity(query: str, max_results: int = 5) -> Tuple[str, list[str]]
 
     data = response.json()
     content = data["choices"][0]["message"]["content"]
+    citations = [c for c in data.get("citations", []) if isinstance(c, str)]
 
-    # Perplexity API 返回结构可能随版本变化，sources 先从 citations 尝试读取
-    citations = data.get("citations", [])
-    sources = [c for c in citations if isinstance(c, str)]
+    if citations:
+        return [
+            SearchResultItem(
+                query=query,
+                title="Perplexity Search Result",
+                snippet=content,
+                url=url,
+                search_api="perplexity",
+                retrieved_at=now_iso(),
+            )
+            for url in citations[:max_results]
+        ]
 
-    return content, sources
+    return [
+        SearchResultItem(
+            query=query,
+            title="Perplexity Search Result",
+            snippet=content,
+            url="",
+            search_api="perplexity",
+            retrieved_at=now_iso(),
+        )
+    ]
 
 
-def search_searxng(query: str, max_results: int = 5) -> Tuple[str, list[str]]:
+def search_searxng(query: str, max_results: int = 5) -> list[SearchResultItem]:
     base_url = os.getenv("SEARXNG_URL")
     if not base_url:
         raise ValueError("未找到 SEARXNG_URL，请检查 .env 文件")
@@ -116,33 +137,87 @@ def search_searxng(query: str, max_results: int = 5) -> Tuple[str, list[str]]:
     data = response.json()
     items = data.get("results", [])[:max_results]
 
-    results = []
-    sources = []
-
-    for item in items:
-        title = item.get("title", "")
-        content = item.get("content", "")
-        url = item.get("url", "")
-
-        results.append(f"标题：{title}\n摘要：{content}\n链接：{url}")
-
-        if url:
-            sources.append(url)
-
-    return "\n\n".join(results), sources
+    return [
+        SearchResultItem(
+            query=query,
+            title=item.get("title", "") or "",
+            snippet=item.get("content", "") or "",
+            url=item.get("url", "") or "",
+            search_api="searxng",
+            retrieved_at=now_iso(),
+        )
+        for item in items
+    ]
 
 
-def web_search(query: str, search_api: str = "duckduckgo", max_results: int = 5) -> Tuple[str, list[str]]:
+def web_search(
+    query: str,
+    search_api: str = "duckduckgo",
+    max_results: int = 5,
+    use_cache: bool = True,
+) -> list[SearchResultItem]:
+    if use_cache:
+        cached = load_search_cache(
+            search_api=search_api,
+            query=query,
+            max_results=max_results,
+        )
+        if cached is not None:
+            return cached
+
     if search_api == "duckduckgo":
-        return search_duckduckgo(query, max_results=max_results)
+        results = search_duckduckgo(query, max_results=max_results)
+    elif search_api == "tavily":
+        results = search_tavily(query, max_results=max_results)
+    elif search_api == "perplexity":
+        results = search_perplexity(query, max_results=max_results)
+    elif search_api == "searxng":
+        results = search_searxng(query, max_results=max_results)
+    else:
+        raise ValueError(f"不支持的搜索后端：{search_api}")
 
-    if search_api == "tavily":
-        return search_tavily(query, max_results=max_results)
+    save_search_cache(
+        search_api=search_api,
+        query=query,
+        max_results=max_results,
+        results=results,
+    )
 
-    if search_api == "perplexity":
-        return search_perplexity(query, max_results=max_results)
+    return results
 
-    if search_api == "searxng":
-        return search_searxng(query, max_results=max_results)
 
-    raise ValueError(f"不支持的搜索后端：{search_api}")
+def format_search_results_for_prompt(results: list[SearchResultItem]) -> str:
+    if not results:
+        return "无搜索结果。"
+
+    blocks = []
+
+    for idx, item in enumerate(results, start=1):
+        blocks.append(
+            "\n".join(
+                [
+                    f"[S{idx}]",
+                    f"Query: {item.query}",
+                    f"Title: {item.title}",
+                    f"Snippet: {item.snippet}",
+                    f"URL: {item.url}",
+                    f"Search API: {item.search_api}",
+                    f"Retrieved At: {item.retrieved_at}",
+                ]
+            )
+        )
+
+    return "\n\n".join(blocks)
+
+
+def collect_source_urls(results: list[SearchResultItem]) -> list[str]:
+    seen = set()
+    urls = []
+
+    for item in results:
+        url = (item.url or "").strip()
+        if url and url not in seen:
+            urls.append(url)
+            seen.add(url)
+
+    return urls

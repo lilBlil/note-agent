@@ -8,3 +8,4 @@ pydantic
 ddgs
 requests
 streamlit
+beautifulsoup4

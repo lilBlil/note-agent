@@ -1,8 +1,10 @@
 import re
 from datetime import datetime
 from pathlib import Path
-from note_agent.config import get_model
 from contextvars import ContextVar
+
+from note_agent.config import get_model
+
 
 NOTES_DIR = Path("notes")
 NOTES_DIR.mkdir(exist_ok=True)
@@ -20,13 +22,19 @@ def reset_event_handler(token):
     _event_handler.reset(token)
 
 
+def has_event_handler() -> bool:
+    return _event_handler.get() is not None
+
+
 def emit_event(event_type: str, **payload):
     handler = _event_handler.get()
     if handler:
-        handler({
-            "type": event_type,
-            **payload,
-        })
+        handler(
+            {
+                "type": event_type,
+                **payload,
+            }
+        )
 
 
 def emit_node_start(node_name: str, step_label: str):
@@ -57,14 +65,21 @@ def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> st
         return response.content
 
     full_text = ""
+    should_print = not has_event_handler()
 
     for chunk in llm.stream(prompt):
         if chunk.content:
             emit_token(chunk.content)
-            print(chunk.content, end="", flush=True)
+
+            # CLI 下保留逐字输出；Streamlit 下不刷终端，避免输出噪声。
+            if should_print:
+                print(chunk.content, end="", flush=True)
+
             full_text += chunk.content
 
-    print()
+    if should_print:
+        print()
+
     return full_text
 
 
@@ -86,11 +101,11 @@ def strip_markdown_fence(content: str) -> str:
     content = content.strip()
 
     if content.startswith("```markdown"):
-        content = content[len("```markdown"):].strip()
+        content = content[len("```markdown") :].strip()
     elif content.startswith("```md"):
-        content = content[len("```md"):].strip()
+        content = content[len("```md") :].strip()
     elif content.startswith("```"):
-        content = content[len("```"):].strip()
+        content = content[len("```") :].strip()
 
     if content.endswith("```"):
         content = content[:-3].strip()
