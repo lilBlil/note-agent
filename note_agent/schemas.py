@@ -22,9 +22,10 @@ SearchAPI = Literal[
 
 class NoteAgentRequest(BaseModel):
     raw_input: str
-    # 0 表示不执行检索-核验-修正迭代；不设置上限。
+    # 0 means skip retrieval-verification-refinement iterations.
     max_iterations: int = Field(default=2, ge=0)
     llm_provider: LLMProvider = "deepseek"
+    # This is now only the preferred web backend inside unified retrieval.
     search_api: SearchAPI = "duckduckgo"
 
 
@@ -34,7 +35,8 @@ class NoteAgentResponse(BaseModel):
     final_note: str
     saved_path: str
     sources: list[str]
-    used_search_queries: list[str]
+    used_reference_queries: list[str] = Field(default_factory=list)
     iterations: int
     intermediate_paths: list[str] = Field(default_factory=list)
+    asset_paths: list[str] = Field(default_factory=list)
     run_log_dir: str = ""

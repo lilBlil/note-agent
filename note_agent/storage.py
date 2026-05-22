@@ -5,20 +5,23 @@ import json
 from pathlib import Path
 from typing import Any
 
-from note_agent.models import RunRecord, SearchResultItem, now_iso
+from note_agent.models import ReferenceItem, RunRecord, now_iso
 
 
 RUNS_DIR = Path("runs")
-CACHE_DIR = Path(".cache") / "search"
+REFERENCE_CACHE_DIR = Path(".cache") / "references"
 INTERMEDIATE_DIR = Path("notes") / "intermediate"
+ASSETS_DIR = Path("notes") / "assets"
 
-for directory in (RUNS_DIR, CACHE_DIR, INTERMEDIATE_DIR):
+for directory in (RUNS_DIR, REFERENCE_CACHE_DIR, INTERMEDIATE_DIR, ASSETS_DIR):
     directory.mkdir(parents=True, exist_ok=True)
 
 
 def _to_plain_data(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump()
+    if hasattr(value, "dict"):
+        return value.dict()
     if isinstance(value, list):
         return [_to_plain_data(item) for item in value]
     if isinstance(value, tuple):
@@ -28,7 +31,7 @@ def _to_plain_data(value: Any) -> Any:
     return value
 
 
-def _write_json(path: Path, data: Any) -> None:
+def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(_to_plain_data(data), ensure_ascii=False, indent=2),
@@ -36,12 +39,18 @@ def _write_json(path: Path, data: Any) -> None:
     )
 
 
-def _read_json(path: Path) -> Any:
+def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def get_run_dir(run_id: str) -> Path:
     path = RUNS_DIR / run_id
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_assets_dir(run_id: str) -> Path:
+    path = ASSETS_DIR / run_id
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -62,7 +71,7 @@ def start_run(
         search_api=search_api,
         max_iterations=max_iterations,
     )
-    _write_json(get_run_dir(run_id) / "run.json", record)
+    write_json(get_run_dir(run_id) / "run.json", record)
 
 
 def finish_run(
@@ -73,14 +82,14 @@ def finish_run(
     error: str = "",
 ) -> None:
     run_path = get_run_dir(run_id) / "run.json"
-    data = _read_json(run_path) if run_path.exists() else {"run_id": run_id}
+    data = read_json(run_path) if run_path.exists() else {"run_id": run_id}
 
     data["status"] = status
     data["saved_path"] = saved_path
     data["error"] = error
     data["updated_at"] = now_iso()
 
-    _write_json(run_path, data)
+    write_json(run_path, data)
 
 
 def append_event(run_id: str, event: dict[str, Any]) -> None:
@@ -101,11 +110,13 @@ def summarize_state(state: dict[str, Any]) -> dict[str, Any]:
         "iteration_count",
         "llm_provider",
         "search_api",
-        "search_queries",
-        "used_search_queries",
+        "reference_queries",
+        "used_reference_queries",
         "sources",
         "saved_path",
         "intermediate_paths",
+        "asset_paths",
+        "asset_plan",
     ]
 
     summary = {key: _to_plain_data(state.get(key)) for key in keys if key in state}
@@ -114,14 +125,16 @@ def summarize_state(state: dict[str, Any]) -> dict[str, Any]:
         value = state.get(text_key, "")
         summary[text_key] = value[:1000] if isinstance(value, str) else value
 
-    summary["search_results_count"] = len(state.get("search_results", []) or [])
+    summary["reference_results_count"] = len(state.get("reference_results", []) or [])
     summary["evidence_items_count"] = len(state.get("evidence_items", []) or [])
+    summary["generated_assets"] = _to_plain_data(state.get("generated_assets") or {})
+
     return summary
 
 
 def save_state_snapshot(run_id: str, state: dict[str, Any], name: str = "final_state") -> str:
     path = get_run_dir(run_id) / f"{name}.json"
-    _write_json(path, summarize_state(state))
+    write_json(path, summarize_state(state))
     return str(path.resolve())
 
 
@@ -135,35 +148,52 @@ def save_intermediate_note(run_id: str, label: str, content: str) -> str:
     return str(path.resolve())
 
 
-def _cache_key(search_api: str, query: str, max_results: int) -> str:
-    raw = f"{search_api}::{query}::{max_results}"
+def _cache_key(*parts: object) -> str:
+    raw = "::".join(str(part) for part in parts)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
-def load_search_cache(
+def load_reference_cache(
     *,
-    search_api: str,
+    source_name: str,
     query: str,
     max_results: int,
-) -> list[SearchResultItem] | None:
-    path = CACHE_DIR / f"{_cache_key(search_api, query, max_results)}.json"
+) -> list[ReferenceItem] | None:
+    path = REFERENCE_CACHE_DIR / f"{_cache_key(source_name, query, max_results)}.json"
 
     if not path.exists():
         return None
 
     try:
-        data = _read_json(path)
-        return [SearchResultItem(**item) for item in data]
+        data = read_json(path)
+        return [ReferenceItem(**item) for item in data]
     except Exception:
         return None
 
 
-def save_search_cache(
+def save_reference_cache(
     *,
-    search_api: str,
+    source_name: str,
     query: str,
     max_results: int,
-    results: list[SearchResultItem],
+    results: list[ReferenceItem],
 ) -> None:
-    path = CACHE_DIR / f"{_cache_key(search_api, query, max_results)}.json"
-    _write_json(path, results)
+    path = REFERENCE_CACHE_DIR / f"{_cache_key(source_name, query, max_results)}.json"
+    write_json(path, results)
+
+
+# Compatibility wrappers for old search.py / paper_search.py.
+def load_search_cache(*, search_api: str, query: str, max_results: int):
+    return load_reference_cache(source_name=search_api, query=query, max_results=max_results)
+
+
+def save_search_cache(*, search_api: str, query: str, max_results: int, results):
+    save_reference_cache(source_name=search_api, query=query, max_results=max_results, results=results)
+
+
+def load_paper_search_cache(*, backend: str, query: str, max_results: int):
+    return load_reference_cache(source_name=backend, query=query, max_results=max_results)
+
+
+def save_paper_search_cache(*, backend: str, query: str, max_results: int, results):
+    save_reference_cache(source_name=backend, query=query, max_results=max_results, results=results)

@@ -1,6 +1,6 @@
-from typing import TypedDict, List, Dict
+from typing import Any, Dict, List, TypedDict
 
-from note_agent.models import SearchResultItem
+from note_agent.models import ReferenceItem
 
 
 class NoteResearchState(TypedDict):
@@ -16,13 +16,11 @@ class NoteResearchState(TypedDict):
     note_outline: List[Dict[str, str]]
     current_note: str
 
-    search_queries: List[str]
-    used_search_queries: List[str]
-
-    # 当前轮结构化搜索结果
-    search_results: List[SearchResultItem]
-    # 全部迭代累计证据
-    evidence_items: List[SearchResultItem]
+    # v4.0 unified reference retrieval
+    reference_queries: List[Dict[str, Any]]
+    used_reference_queries: List[str]
+    reference_results: List[ReferenceItem]
+    evidence_items: List[ReferenceItem]
     sources: List[str]
 
     verification_report: str
@@ -30,3 +28,8 @@ class NoteResearchState(TypedDict):
     final_note: str
     saved_path: str
     intermediate_paths: List[str]
+
+    # v4.0 multimodal note assets
+    asset_plan: List[Dict[str, Any]]
+    generated_assets: Dict[str, Any]
+    asset_paths: List[str]

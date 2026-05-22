@@ -1,9 +1,5 @@
 # app.py
-# Note Agent Streamlit UI with node-level and token-level streaming.
-# This version keeps input_loader.py support:
-# - manual text
-# - uploaded .txt / .md files
-# - webpage URLs
+# Note Agent Streamlit UI with unified reference retrieval and multimodal assets.
 
 import html
 
@@ -85,7 +81,7 @@ def parse_urls(raw_urls: str) -> list[str]:
 def main():
     st.title(f"📝 Note Agent v{__version__}")
     st.caption(
-        "LangGraph-based research note agent with search, verification, evidence cache and run logs."
+        "LangGraph-based research note agent with unified reference retrieval, verification and multimodal assets."
     )
 
     with st.sidebar:
@@ -105,7 +101,7 @@ def main():
         )
 
         search_api = st.selectbox(
-            "Search API",
+            "Web Search Backend",
             options=[
                 "duckduckgo",
                 "tavily",
@@ -113,6 +109,7 @@ def main():
                 "searxng",
             ],
             index=0,
+            help="统一检索中的网页来源使用该后端；论文、书籍和学术资料由内置来源自动处理。",
         )
 
         max_iterations = st.number_input(
@@ -132,10 +129,12 @@ def main():
             - `.txt` / `.md` 文件上传
             - 网页 URL 导入
             - 动态笔记结构生成
-            - 结构化网络检索
+            - 统一参考信息检索
+            - 覆盖网页 / 论文 / 书籍 / 学术资料
             - 搜索缓存
             - 事实检验
             - 多轮迭代
+            - 公式 / 代码 / Mermaid / 图表资产生成
             - 中间版本保存
             - 运行日志持久化
             - Markdown 自动保存
@@ -195,7 +194,7 @@ def main():
             unsafe_allow_html=True,
         )
 
-        st.subheader("检索 Query / 搜索过程 / 中间版本")
+        st.subheader("检索过程 / 中间版本")
         search_area = st.empty()
         search_area.markdown(
             render_scroll_box("暂无检索信息。", height=180),
@@ -314,6 +313,10 @@ def main():
                     if latest_state.get("intermediate_paths"):
                         result_area.markdown("**中间版本：**")
                         result_area.code("\n".join(latest_state.get("intermediate_paths", [])))
+
+                    if latest_state.get("asset_paths"):
+                        result_area.markdown("**生成资产：**")
+                        result_area.code("\n".join(latest_state.get("asset_paths", [])))
 
                 elif event_type == "error":
                     result_area.error(f"运行失败：{event.get('message')}")

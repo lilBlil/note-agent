@@ -103,7 +103,7 @@ def select_provider() -> str:
 
 
 def select_search_api() -> str:
-    print("\n请选择 Search API：")
+    print("\n请选择网页检索后端。统一检索中的论文、书籍和学术资料会自动使用内置来源。")
     print("1. DuckDuckGo")
     print("2. Tavily")
     print("3. Perplexity")
@@ -164,6 +164,16 @@ def main():
     if response.intermediate_paths:
         print("\n中间版本：")
         for path in response.intermediate_paths:
+            print(path)
+
+    if response.sources:
+        print("\n参考来源：")
+        for source in response.sources:
+            print(source)
+
+    if response.asset_paths:
+        print("\n生成资产：")
+        for path in response.asset_paths:
             print(path)
 
 

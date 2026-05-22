@@ -1,21 +1,32 @@
 import json
+import re
 
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 
+from note_agent.asset_tools import (
+    build_asset_markdown_items,
+    inject_assets_into_markdown,
+    parse_asset_plan,
+    parse_generated_assets,
+    save_generated_assets,
+)
+from note_agent.models import ReferenceQuery
 from note_agent.prompts import (
     finalize_note_prompt,
+    generate_assets_prompt,
     generate_initial_note_prompt,
     generate_outline_prompt,
-    generate_search_queries_prompt,
+    generate_reference_queries_prompt,
     generate_title_prompt,
     infer_note_type_prompt,
+    plan_assets_prompt,
     refine_note_prompt,
     verify_note_prompt,
 )
-from note_agent.search import (
-    collect_source_urls,
-    format_search_results_for_prompt,
-    web_search,
+from note_agent.retrieval import (
+    collect_reference_urls,
+    format_references_for_prompt,
+    retrieve_references,
 )
 from note_agent.state import NoteResearchState
 from note_agent.storage import append_event, save_intermediate_note
@@ -39,6 +50,36 @@ def _dedupe_urls(urls: list[str]) -> list[str]:
             seen.add(url)
 
     return result
+
+
+def _extract_json_object(text: str) -> dict:
+    text = (text or "").strip()
+
+    if text.startswith("```json"):
+        text = text[len("```json") :].strip()
+    elif text.startswith("```"):
+        text = text[len("```") :].strip()
+
+    if text.endswith("```"):
+        text = text[:-3].strip()
+
+    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+    if match:
+        text = match.group(0)
+
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _model_dump(obj):
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    return obj
 
 
 def infer_note_type(state: NoteResearchState):
@@ -97,108 +138,136 @@ def generate_initial_note(state: NoteResearchState):
     return {
         "current_note": note,
         "iteration_count": 0,
-        "search_queries": [],
-        "used_search_queries": [],
-        "search_results": [],
+        "reference_queries": [],
+        "used_reference_queries": [],
+        "reference_results": [],
         "evidence_items": [],
         "sources": [],
         "intermediate_paths": [intermediate_path],
+        "asset_plan": [],
+        "generated_assets": {},
+        "asset_paths": [],
     }
 
 
 def route_after_initial_note(state: NoteResearchState) -> str:
-    """
-    max_iterations = 0 时跳过检索、核验和修正，直接生成最终 Markdown。
-    max_iterations > 0 时进入原有迭代流程。
-    """
     if state["max_iterations"] <= 0:
         return "finalize"
     return "continue"
 
 
-def generate_search_queries(state: NoteResearchState):
-    emit_node_start("generate_search_queries", "正在分析信息缺口并生成检索问题")
+def generate_reference_queries(state: NoteResearchState):
+    emit_node_start("generate_reference_queries", "正在分析信息缺口并生成统一检索请求")
 
     text = ask_llm(
-        generate_search_queries_prompt(
+        generate_reference_queries_prompt(
             current_note=state["current_note"],
-            used_queries=state.get("used_search_queries", []),
+            used_queries=state.get("used_reference_queries", []),
         ),
         provider=state["llm_provider"],
         stream=True,
     )
 
-    raw_queries = [
-        line.strip("- ").strip()
-        for line in text.splitlines()
-        if line.strip()
-    ]
+    data = _extract_json_object(text)
+    raw_items = data.get("reference_queries", [])
+    if not isinstance(raw_items, list):
+        raw_items = []
 
-    used = set(normalize_query(q) for q in state.get("used_search_queries", []))
-    new_queries = []
+    used = set(normalize_query(q) for q in state.get("used_reference_queries", []))
+    reference_queries = []
+    used_query_texts = []
 
-    for q in raw_queries:
-        normalized = normalize_query(q)
-        if normalized and normalized not in used:
-            new_queries.append(q)
-            used.add(normalized)
+    for item in raw_items:
+        if isinstance(item, str):
+            item = {"query": item, "source_types": ["web", "academic"], "reason": ""}
+        if not isinstance(item, dict):
+            continue
 
-    selected_queries = new_queries[:3]
+        query = str(item.get("query", "")).strip()
+        normalized = normalize_query(query)
+        if not normalized or normalized in used:
+            continue
+
+        source_types = item.get("source_types") or ["web", "academic"]
+        if isinstance(source_types, str):
+            source_types = [source_types]
+        source_types = [s for s in source_types if s in {"web", "paper", "book", "academic"}]
+        if not source_types:
+            source_types = ["web", "academic"]
+
+        reference_query = ReferenceQuery(
+            query=query,
+            source_types=source_types,
+            reason=str(item.get("reason", "")),
+        )
+        reference_queries.append(_model_dump(reference_query))
+        used_query_texts.append(query)
+        used.add(normalized)
+
+    reference_queries = reference_queries[:4]
+    used_query_texts = used_query_texts[:4]
 
     return {
-        "search_queries": selected_queries,
-        "used_search_queries": state.get("used_search_queries", []) + selected_queries,
+        "reference_queries": reference_queries,
+        "used_reference_queries": state.get("used_reference_queries", []) + used_query_texts,
     }
 
 
-def web_search_node(state: NoteResearchState):
-    emit_node_start("web_search", f"正在使用 {state['search_api']} 进行网络检索")
+def retrieve_references_node(state: NoteResearchState):
+    emit_node_start("retrieve_references", "正在统一检索网页、论文、书籍和学术资料")
 
     current_round_results = []
     evidence_items = list(state.get("evidence_items", []))
-    all_sources = list(state.get("sources", []))
+    sources = list(state.get("sources", []))
 
-    if not state["search_queries"]:
-        emit_event("info", text="本轮没有需要检索的信息缺口。")
+    if not state["reference_queries"]:
+        emit_event("info", text="本轮没有需要检索的参考信息。")
         return {
-            "search_results": [],
+            "reference_results": [],
             "evidence_items": evidence_items,
-            "sources": _dedupe_urls(all_sources),
+            "sources": _dedupe_urls(sources),
         }
 
-    for query in state["search_queries"]:
-        emit_event("info", text=f"正在搜索：{query}")
+    for item in state["reference_queries"]:
+        try:
+            reference_query = ReferenceQuery(**item)
+        except Exception:
+            continue
+
+        source_types_text = ", ".join(reference_query.source_types)
+        emit_event("info", text=f"正在检索：{reference_query.query}；来源类型：{source_types_text}")
 
         try:
-            results = web_search(
-                query,
-                search_api=state["search_api"],
+            results = retrieve_references(
+                reference_query,
+                web_backend=state["search_api"],
+                max_results_per_type=5,
             )
         except Exception as e:
-            emit_event("info", text=f"搜索失败：{query}；原因：{e}")
+            emit_event("info", text=f"检索失败：{reference_query.query}；原因：{e}")
             results = []
 
         current_round_results.extend(results)
         evidence_items.extend(results)
-        all_sources.extend(collect_source_urls(results))
+        sources.extend(collect_reference_urls(results))
 
     return {
-        "search_results": current_round_results,
+        "reference_results": current_round_results,
         "evidence_items": evidence_items,
-        "sources": _dedupe_urls(all_sources),
+        "sources": _dedupe_urls(sources),
     }
 
 
 def verify_note(state: NoteResearchState):
     emit_node_start("verify_note", "正在进行事实检验")
 
-    search_text = format_search_results_for_prompt(state["search_results"])
+    references_text = format_references_for_prompt(state["reference_results"])
 
     report = ask_llm(
         verify_note_prompt(
             raw_input=state["raw_input"],
             current_note=state["current_note"],
-            search_results=search_text,
+            references=references_text,
         ),
         provider=state["llm_provider"],
         stream=True,
@@ -208,16 +277,16 @@ def verify_note(state: NoteResearchState):
 
 
 def refine_note(state: NoteResearchState):
-    emit_node_start("refine_note", "正在根据检索结果修正并补充笔记")
+    emit_node_start("refine_note", "正在根据统一参考信息修正并补充笔记")
 
-    search_text = format_search_results_for_prompt(state["search_results"])
+    references_text = format_references_for_prompt(state["reference_results"])
     next_iteration = state["iteration_count"] + 1
 
     new_note = ask_llm(
         refine_note_prompt(
             raw_input=state["raw_input"],
             current_note=state["current_note"],
-            search_results=search_text,
+            references=references_text,
             verification_report=state["verification_report"],
         ),
         provider=state["llm_provider"],
@@ -246,7 +315,7 @@ def route_iteration(state: NoteResearchState) -> str:
 
 
 def finalize_note(state: NoteResearchState):
-    emit_node_start("finalize_note", "正在生成最终笔记")
+    emit_node_start("finalize_note", "正在生成最终文本笔记")
 
     final_note = ask_llm(
         finalize_note_prompt(
@@ -259,11 +328,91 @@ def finalize_note(state: NoteResearchState):
 
     intermediate_path = save_intermediate_note(
         state["run_id"],
-        "final",
+        "final_text_only",
         final_note,
     )
 
-    emit_event("info", text=f"已保存最终中间版本：{intermediate_path}")
+    emit_event("info", text=f"已保存文本版最终笔记：{intermediate_path}")
+
+    return {
+        "final_note": final_note,
+        "intermediate_paths": state.get("intermediate_paths", []) + [intermediate_path],
+    }
+
+
+def plan_note_assets(state: NoteResearchState):
+    emit_node_start("plan_note_assets", "正在规划公式、代码、图表和流程图")
+
+    text = ask_llm(
+        plan_assets_prompt(
+            current_note=state["final_note"],
+            note_type=state["note_type"],
+        ),
+        provider=state["llm_provider"],
+        stream=True,
+    )
+
+    plan_items = parse_asset_plan(text)
+    plan_data = [_model_dump(item) for item in plan_items]
+
+    emit_event("info", text=f"资产规划数量：{len(plan_data)}")
+
+    return {"asset_plan": plan_data}
+
+
+def generate_note_assets(state: NoteResearchState):
+    emit_node_start("generate_note_assets", "正在生成笔记资产")
+
+    if not state.get("asset_plan"):
+        emit_event("info", text="没有需要生成的公式、代码、图表或流程图。")
+        return {
+            "generated_assets": {},
+            "asset_paths": [],
+        }
+
+    asset_plan_text = json.dumps(state["asset_plan"], ensure_ascii=False, indent=2)
+
+    text = ask_llm(
+        generate_assets_prompt(
+            current_note=state["final_note"],
+            asset_plan=asset_plan_text,
+        ),
+        provider=state["llm_provider"],
+        stream=True,
+    )
+
+    generated_assets = parse_generated_assets(text)
+    asset_paths = save_generated_assets(state["run_id"], generated_assets)
+
+    emit_event("info", text=f"已生成并保存资产文件：{len(asset_paths)} 个")
+
+    return {
+        "generated_assets": _model_dump(generated_assets),
+        "asset_paths": asset_paths,
+    }
+
+
+def assemble_assets_into_note(state: NoteResearchState):
+    emit_node_start("assemble_assets_into_note", "正在组装多模态 Markdown 笔记")
+
+    generated_assets = parse_generated_assets(
+        json.dumps(state.get("generated_assets", {}), ensure_ascii=False)
+    )
+
+    asset_items = build_asset_markdown_items(
+        generated_assets,
+        state.get("asset_paths", []),
+    )
+
+    final_note = inject_assets_into_markdown(state["final_note"], asset_items)
+
+    intermediate_path = save_intermediate_note(
+        state["run_id"],
+        "final_with_assets",
+        final_note,
+    )
+
+    emit_event("info", text=f"已保存多模态最终版本：{intermediate_path}")
 
     return {
         "final_note": final_note,
@@ -287,6 +436,8 @@ def save_markdown_node(state: NoteResearchState):
         {
             "type": "saved",
             "saved_path": saved_path,
+            "asset_paths": state.get("asset_paths", []),
+            "sources": state.get("sources", []),
         },
     )
 
@@ -299,11 +450,14 @@ def build_graph():
     builder.add_node("infer_note_type", infer_note_type)
     builder.add_node("generate_dynamic_outline", generate_dynamic_outline)
     builder.add_node("generate_initial_note", generate_initial_note)
-    builder.add_node("generate_search_queries", generate_search_queries)
-    builder.add_node("web_search", web_search_node)
+    builder.add_node("generate_reference_queries", generate_reference_queries)
+    builder.add_node("retrieve_references", retrieve_references_node)
     builder.add_node("verify_note", verify_note)
     builder.add_node("refine_note", refine_note)
     builder.add_node("finalize_note", finalize_note)
+    builder.add_node("plan_note_assets", plan_note_assets)
+    builder.add_node("generate_note_assets", generate_note_assets)
+    builder.add_node("assemble_assets_into_note", assemble_assets_into_note)
     builder.add_node("save_markdown", save_markdown_node)
 
     builder.add_edge(START, "infer_note_type")
@@ -314,25 +468,28 @@ def build_graph():
         "generate_initial_note",
         route_after_initial_note,
         {
-            "continue": "generate_search_queries",
+            "continue": "generate_reference_queries",
             "finalize": "finalize_note",
         },
     )
 
-    builder.add_edge("generate_search_queries", "web_search")
-    builder.add_edge("web_search", "verify_note")
+    builder.add_edge("generate_reference_queries", "retrieve_references")
+    builder.add_edge("retrieve_references", "verify_note")
     builder.add_edge("verify_note", "refine_note")
 
     builder.add_conditional_edges(
         "refine_note",
         route_iteration,
         {
-            "continue": "generate_search_queries",
+            "continue": "generate_reference_queries",
             "finalize": "finalize_note",
         },
     )
 
-    builder.add_edge("finalize_note", "save_markdown")
+    builder.add_edge("finalize_note", "plan_note_assets")
+    builder.add_edge("plan_note_assets", "generate_note_assets")
+    builder.add_edge("generate_note_assets", "assemble_assets_into_note")
+    builder.add_edge("assemble_assets_into_note", "save_markdown")
     builder.add_edge("save_markdown", END)
 
     return builder.compile()

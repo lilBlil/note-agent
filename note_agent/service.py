@@ -25,15 +25,18 @@ def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:
         "note_type": "",
         "note_outline": [],
         "current_note": "",
-        "search_queries": [],
-        "used_search_queries": [],
-        "search_results": [],
+        "reference_queries": [],
+        "used_reference_queries": [],
+        "reference_results": [],
         "evidence_items": [],
         "sources": [],
         "verification_report": "",
         "final_note": "",
         "saved_path": "",
         "intermediate_paths": [],
+        "asset_plan": [],
+        "generated_assets": {},
+        "asset_paths": [],
     }
 
 
@@ -43,10 +46,11 @@ def build_response(result: dict) -> NoteAgentResponse:
         note_type=result["note_type"],
         final_note=result["final_note"],
         saved_path=result["saved_path"],
-        sources=result["sources"],
-        used_search_queries=result["used_search_queries"],
+        sources=result.get("sources", []),
+        used_reference_queries=result.get("used_reference_queries", []),
         iterations=result["iteration_count"],
         intermediate_paths=result.get("intermediate_paths", []),
+        asset_paths=result.get("asset_paths", []),
         run_log_dir=str(get_run_dir(result["run_id"]).resolve()),
     )
 
@@ -64,7 +68,6 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
     )
 
     def handler(event: dict):
-        # token 太多，不写入日志；UI 流仍然可以使用 token 事件。
         if event.get("type") != "token":
             append_event(run_id, event)
 

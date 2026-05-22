@@ -1,0 +1,23 @@
+{"created_at": "2026-05-22T14:08:45", "type": "node_start", "node_name": "infer_note_type", "step_label": "正在判断笔记类型"}
+{"created_at": "2026-05-22T14:08:48", "type": "node_start", "node_name": "generate_dynamic_outline", "step_label": "正在生成动态笔记结构"}
+{"created_at": "2026-05-22T14:08:54", "type": "node_start", "node_name": "generate_initial_note", "step_label": "正在生成笔记"}
+{"created_at": "2026-05-22T14:09:09", "type": "info", "text": "已保存初版中间笔记：D:\\langchain-note-agent\\notes\\intermediate\\run_20260522_140845_e803a373\\iteration_0_initial.md"}
+{"created_at": "2026-05-22T14:09:09", "type": "node_start", "node_name": "generate_reference_queries", "step_label": "正在分析信息缺口并生成统一检索请求"}
+{"created_at": "2026-05-22T14:09:14", "type": "node_start", "node_name": "retrieve_references", "step_label": "正在统一检索网页、论文、书籍和学术资料"}
+{"created_at": "2026-05-22T14:09:14", "type": "info", "text": "正在检索：deep learning optimization techniques learning rate scheduling warmup cosine annealing；来源类型：paper, academic"}
+{"created_at": "2026-05-22T14:09:49", "type": "info", "text": "正在检索：batch normalization dropout regularization theory comparison；来源类型：paper, academic"}
+{"created_at": "2026-05-22T14:09:53", "type": "info", "text": "正在检索：PyTorch vs TensorFlow comparison 2025 features ecosystem；来源类型：web"}
+{"created_at": "2026-05-22T14:09:55", "type": "info", "text": "正在检索：self-supervised learning SimCLR MAE contrastive learning survey；来源类型：paper, academic"}
+{"created_at": "2026-05-22T14:10:29", "type": "node_start", "node_name": "verify_note", "step_label": "正在进行事实检验"}
+{"created_at": "2026-05-22T14:10:44", "type": "node_start", "node_name": "refine_note", "step_label": "正在根据统一参考信息修正并补充笔记"}
+{"created_at": "2026-05-22T14:11:00", "type": "info", "text": "已保存第 1 轮中间笔记：D:\\langchain-note-agent\\notes\\intermediate\\run_20260522_140845_e803a373\\iteration_1_refined.md"}
+{"created_at": "2026-05-22T14:11:00", "type": "node_start", "node_name": "finalize_note", "step_label": "正在生成最终文本笔记"}
+{"created_at": "2026-05-22T14:11:17", "type": "info", "text": "已保存文本版最终笔记：D:\\langchain-note-agent\\notes\\intermediate\\run_20260522_140845_e803a373\\final_text_only.md"}
+{"created_at": "2026-05-22T14:11:17", "type": "node_start", "node_name": "plan_note_assets", "step_label": "正在规划公式、代码、图表和流程图"}
+{"created_at": "2026-05-22T14:11:20", "type": "info", "text": "资产规划数量：3"}
+{"created_at": "2026-05-22T14:11:20", "type": "node_start", "node_name": "generate_note_assets", "step_label": "正在生成笔记资产"}
+{"created_at": "2026-05-22T14:11:29", "type": "info", "text": "已生成并保存资产文件：0 个"}
+{"created_at": "2026-05-22T14:11:29", "type": "node_start", "node_name": "assemble_assets_into_note", "step_label": "正在组装多模态 Markdown 笔记"}
+{"created_at": "2026-05-22T14:11:29", "type": "info", "text": "已保存多模态最终版本：D:\\langchain-note-agent\\notes\\intermediate\\run_20260522_140845_e803a373\\final_with_assets.md"}
+{"created_at": "2026-05-22T14:11:29", "type": "node_start", "node_name": "save_markdown", "step_label": "正在生成文件名并保存 Markdown"}
+{"created_at": "2026-05-22T14:11:32", "type": "saved", "saved_path": "D:\\langchain-note-agent\\notes\\深度学习教程核心概念与训练流程_20260522_141132.md", "asset_paths": [], "sources": ["https://openalex.org/W3035060554", "https://openalex.org/W3128633047", "https://openalex.org/W4401306886", "https://openalex.org/W2902332991", "https://openalex.org/W2749581528", "https://www.semanticscholar.org/paper/a58760745d46510b51fe3420ec44d6e63a3596c2", "https://doi.org/10.3934/mbe.2024054", "https://www.semanticscholar.org/paper/31946da6ce953a7fc34a29c8e7d7149798b87544", "https://www.semanticscholar.org/paper/d4caf06d3eaaa835038829d9e0f0b4f87280e438", "https://www.semanticscholar.org/paper/ca31807d39af3f491940f62053bde0b976566fc6", "https://www.semanticscholar.org/paper/235ce16f0d7b7395badf0bfa974625cb52650916", "https://openalex.org/W2954996726", "https://openalex.org/W3140854437", "https://openalex.org/W2604314403", "https://openalex.org/W2190545194", "https://openalex.org/W2964110616", "https://acecloud.ai/blog/pytorch-vs-tensorflow/", "https://opencv.org/blog/pytorch-vs-tensorflow/", "https://www.udacity.com/blog/2025/06/tensorflow-vs-pytorch-which-framework-should-you-learn-in-2025.html", "https://www.marktechpost.com/2025/08/20/deep-learning-framework-showdown-pytorch-vs-tensorflow-in-2025/", "https://medium.com/@dev_tips/pytorch-vs-tensorflow-2025-which-one-wins-after-72-hours-63f85874b710", "https://openalex.org/W4386697749", "https://openalex.org/W4367055910", "https://openalex.org/W4293163051", "https://openalex.org/W4367000428", "https://openalex.org/W4386266197"]}
