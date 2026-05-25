@@ -16,32 +16,27 @@
 
 ```text
 langchain-note-agent/
-├─ src/
-│  └─ note_agent/
-│     ├─ cli.py              # 命令行入口
-│     ├─ web.py              # Streamlit 入口
-│     ├─ graph.py            # LangGraph 工作流
-│     ├─ service.py          # 同步/流式服务层
-│     ├─ retrieval.py        # 统一参考信息检索
-│     ├─ prompts.py          # LLM 提示词
-│     ├─ storage.py          # 运行日志、缓存、中间文件
-│     ├─ input_loader.py     # 文件和网页输入加载
-│     ├─ schemas.py          # 请求、响应、状态、参考项和资产模型
-│     ├─ config.py           # 模型配置
-│     └─ utils/
-│        ├─ asset_tools.py   # 资产解析、保存、注入
-│        ├─ events.py        # 流式事件上下文
-│        ├─ llm.py           # LLM 调用封装
-│        ├─ markdown.py      # Markdown 清洗和保存
-│        └─ text.py          # 通用文本处理
-├─ demos/                    # 历史示例
-├─ notes/                    # 生成的笔记和资产，默认不提交
-├─ runs/                     # 运行日志，默认不提交
-├─ .cache/                   # 检索缓存，默认不提交
-├─ app.py                    # 兼容入口：streamlit run app.py
-├─ main.py                   # 兼容入口：python main.py
-├─ pyproject.toml            # 项目元数据和 uv 依赖配置
-└─ uv.lock                   # uv 锁文件
+├─ src/note_agent/
+│  ├─ cli.py              # 命令行入口
+│  ├─ web.py              # Streamlit 入口
+│  ├─ graph.py            # LangGraph 工作流
+│  ├─ service.py          # 同步/流式服务层
+│  ├─ retrieval.py        # 统一参考信息检索
+│  ├─ prompts.py          # LLM 提示词
+│  ├─ storage.py          # 运行日志、缓存、中间文件
+│  ├─ input_loader.py     # 文件和网页输入加载
+│  ├─ schemas.py          # 请求、响应、状态、参考项和资产模型
+│  ├─ utils.py            # 事件系统、LLM 调用、模型配置、文本处理
+│  └─ assets.py           # 多模态资产生成与 Markdown 注入
+├─ tests/                 # pytest 测试用例
+├─ demos/                 # 历史示例
+├─ notes/                 # 生成的笔记和资产，默认不提交
+├─ runs/                  # 运行日志，默认不提交
+├─ .cache/                # 检索缓存，默认不提交
+├─ app.py                 # 入口：streamlit run app.py
+├─ main.py                # 入口：python main.py
+├─ pyproject.toml         # 项目元数据和 uv 依赖配置
+└─ uv.lock                # uv 锁文件
 ```
 
 ## 安装
@@ -100,6 +95,12 @@ uv run streamlit run app.py
 ```bash
 python main.py
 streamlit run app.py
+```
+
+## 测试
+
+```bash
+uv run pytest tests/ -v
 ```
 
 ## 输出
