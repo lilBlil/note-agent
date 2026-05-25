@@ -1,16 +1,17 @@
 from queue import Queue
 from threading import Thread
 
-from note_agent.graph import graph
-from note_agent.schemas import NoteAgentRequest, NoteAgentResponse, new_run_id
-from note_agent.storage import (
+from note_agent.agent.graph import graph
+from note_agent.domain.models import new_run_id
+from note_agent.domain.schemas import NoteAgentRequest, NoteAgentResponse
+from note_agent.io.storage import (
     append_event,
     finish_run,
     get_run_dir,
     save_state_snapshot,
     start_run,
 )
-from note_agent.utils import reset_event_handler, set_event_handler
+from note_agent.utils.events import reset_event_handler, set_event_handler
 
 
 def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:

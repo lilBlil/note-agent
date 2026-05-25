@@ -5,13 +5,13 @@ from __future__ import annotations
 import streamlit as st
 
 from note_agent import __version__
-from note_agent.input_loader import (
+from note_agent.io.input_loader import (
     build_combined_input,
     fetch_webpage_text,
     read_uploaded_text_file,
 )
-from note_agent.schemas import NoteAgentRequest
-from note_agent.service import stream_note_agent_events
+from note_agent.domain.schemas import NoteAgentRequest
+from note_agent.agent.service import stream_note_agent_events
 
 st.set_page_config(page_title="Note Agent", page_icon="📝", layout="wide")
 

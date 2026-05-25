@@ -15,28 +15,48 @@
 ## 项目结构
 
 ```text
-langchain-note-agent/
+note-agent/
+├─ scripts/
+│  └─ main.py                  # CLI 兼容 wrapper
 ├─ src/note_agent/
-│  ├─ cli.py              # 命令行入口
-│  ├─ web.py              # Streamlit 入口
-│  ├─ graph.py            # LangGraph 工作流
-│  ├─ service.py          # 同步/流式服务层
-│  ├─ retrieval.py        # 统一参考信息检索
-│  ├─ prompts.py          # LLM 提示词
-│  ├─ storage.py          # 运行日志、缓存、中间文件
-│  ├─ input_loader.py     # 文件和网页输入加载
-│  ├─ schemas.py          # 请求、响应、状态、参考项和资产模型
-│  ├─ utils.py            # 事件系统、LLM 调用、模型配置、文本处理
-│  └─ assets.py           # 多模态资产生成与 Markdown 注入
-├─ tests/                 # pytest 测试用例
-├─ demos/                 # 历史示例
-├─ notes/                 # 生成的笔记和资产，默认不提交
-├─ runs/                  # 运行日志，默认不提交
-├─ .cache/                # 检索缓存，默认不提交
-├─ app.py                 # 入口：streamlit run app.py
-├─ main.py                # 入口：python main.py
-├─ pyproject.toml         # 项目元数据和 uv 依赖配置
-└─ uv.lock                # uv 锁文件
+│  ├─ __init__.py              # 版本号
+│  ├─ cli.py                   # 命令行交互入口
+│  ├─ web.py                   # Streamlit 界面入口
+│  ├─ config/
+│  │  └─ settings.py           # LLM 模型配置
+│  ├─ domain/
+│  │  ├─ models.py             # 领域模型（ReferenceItem, NoteResearchState 等）
+│  │  └─ schemas.py            # I/O schema（NoteAgentRequest/Response）
+│  ├─ agent/
+│  │  ├─ graph.py              # LangGraph 工作流
+│  │  ├─ service.py            # 同步/流式服务层
+│  │  └─ prompts.py            # LLM 提示词模板
+│  ├─ retrieval/
+│  │  ├─ service.py            # 检索编排与格式化
+│  │  ├─ sources.py            # 8 种搜索后端（Web/论文/书籍/学术）
+│  │  └─ cache.py              # 检索结果缓存
+│  ├─ io/
+│  │  ├─ input_loader.py       # 文本/文件/网页输入加载
+│  │  └─ storage.py            # 运行日志、状态快照、中间文件
+│  ├─ assets/
+│  │  ├─ schemas.py            # 资产 Pydantic 模型
+│  │  └─ tools.py              # 资产生成与 Markdown 注入
+│  └─ utils/
+│     ├─ events.py             # 流式事件系统
+│     ├─ llm.py                # LLM 调用封装
+│     └─ text.py               # 文本/Markdown 工具
+├─ tests/
+│  ├─ conftest.py
+│  ├─ unit/                    # 单元测试
+│  └─ integration/             # 集成测试（占位）
+├─ demos/                      # 历史示例
+├─ notes/                      # 生成的笔记和资产
+├─ runs/                       # 运行日志
+├─ .cache/                     # 检索缓存
+├─ app.py                      # 入口：streamlit run app.py
+├─ main.py                     # 入口：python main.py
+├─ pyproject.toml
+└─ uv.lock
 ```
 
 ## 安装
@@ -81,20 +101,14 @@ DEFAULT_MAX_ITERATIONS=1
 命令行：
 
 ```bash
-uv run note-agent
+uv run note-agent          # 通过 pyproject.toml 入口
+python scripts/main.py     # 或直接脚本
 ```
 
 Streamlit 界面：
 
 ```bash
 uv run streamlit run app.py
-```
-
-兼容旧入口：
-
-```bash
-python main.py
-streamlit run app.py
 ```
 
 ## 测试

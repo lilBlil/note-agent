@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from note_agent.input_loader import (
+from note_agent.io.input_loader import (
     build_combined_input,
     is_valid_url,
     read_uploaded_text_file,

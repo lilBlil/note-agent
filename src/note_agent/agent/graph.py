@@ -3,7 +3,7 @@ import re
 
 from langgraph.graph import END, START, StateGraph
 
-from note_agent.assets import (
+from note_agent.assets.tools import (
     build_asset_markdown_items,
     inject_assets_into_markdown,
     parse_asset_plan,
@@ -17,7 +17,7 @@ from note_agent.utils import (
     normalize_query,
     save_markdown,
 )
-from note_agent.prompts import (
+from note_agent.agent.prompts import (
     finalize_note_prompt,
     generate_assets_prompt,
     generate_initial_note_prompt,
@@ -29,13 +29,13 @@ from note_agent.prompts import (
     refine_note_prompt,
     verify_note_prompt,
 )
-from note_agent.retrieval import (
+from note_agent.retrieval.service import (
     collect_reference_urls,
     format_references_for_prompt,
     retrieve_references,
 )
-from note_agent.schemas import NoteResearchState, ReferenceQuery
-from note_agent.storage import append_event, save_intermediate_note
+from note_agent.domain.models import NoteResearchState, ReferenceQuery
+from note_agent.io.storage import append_event, save_intermediate_note
 
 
 def _dedupe_urls(urls: list[str]) -> list[str]:

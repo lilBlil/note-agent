@@ -5,13 +5,13 @@ import os
 from dotenv import load_dotenv
 
 from note_agent import __version__
-from note_agent.input_loader import (
+from note_agent.io.input_loader import (
     build_combined_input,
     fetch_webpage_text,
     read_text_file,
 )
-from note_agent.schemas import NoteAgentRequest
-from note_agent.service import run_note_agent
+from note_agent.domain.schemas import NoteAgentRequest
+from note_agent.agent.service import run_note_agent
 
 
 load_dotenv()

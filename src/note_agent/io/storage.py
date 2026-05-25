@@ -1,20 +1,19 @@
+"""Run management, state snapshots, intermediate notes, and generic JSON I/O."""
+
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
-from note_agent.schemas import ReferenceItem, RunRecord, now_iso
-
+from note_agent.domain.models import RunRecord, now_iso
 
 RUNS_DIR = Path("runs")
-REFERENCE_CACHE_DIR = Path(".cache") / "references"
 INTERMEDIATE_DIR = Path("notes") / "intermediate"
 ASSETS_DIR = Path("notes") / "assets"
 
-for directory in (RUNS_DIR, REFERENCE_CACHE_DIR, INTERMEDIATE_DIR, ASSETS_DIR):
-    directory.mkdir(parents=True, exist_ok=True)
+for _d in (RUNS_DIR, INTERMEDIATE_DIR, ASSETS_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 
 
 def _to_plain_data(value: Any) -> Any:
@@ -85,53 +84,34 @@ def finish_run(
 ) -> None:
     run_path = get_run_dir(run_id) / "run.json"
     data = read_json(run_path) if run_path.exists() else {"run_id": run_id}
-
     data["status"] = status
     data["saved_path"] = saved_path
     data["error"] = error
     data["updated_at"] = now_iso()
-
     write_json(run_path, data)
 
 
 def append_event(run_id: str, event: dict[str, Any]) -> None:
     event_path = get_run_dir(run_id) / "events.jsonl"
-    payload = {
-        "created_at": now_iso(),
-        **_to_plain_data(event),
-    }
+    payload = {"created_at": now_iso(), **_to_plain_data(event)}
     with event_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def summarize_state(state: dict[str, Any]) -> dict[str, Any]:
     keys = [
-        "run_id",
-        "note_type",
-        "max_iterations",
-        "enable_assets",
-        "iteration_count",
-        "llm_provider",
-        "search_api",
-        "reference_queries",
-        "used_reference_queries",
-        "sources",
-        "saved_path",
-        "intermediate_paths",
-        "asset_paths",
-        "asset_plan",
+        "run_id", "note_type", "max_iterations", "enable_assets",
+        "iteration_count", "llm_provider", "search_api",
+        "reference_queries", "used_reference_queries", "sources",
+        "saved_path", "intermediate_paths", "asset_paths", "asset_plan",
     ]
-
     summary = {key: _to_plain_data(state.get(key)) for key in keys if key in state}
-
     for text_key in ("current_note", "verification_report", "final_note"):
         value = state.get(text_key, "")
         summary[text_key] = value[:1000] if isinstance(value, str) else value
-
     summary["reference_results_count"] = len(state.get("reference_results", []) or [])
     summary["evidence_items_count"] = len(state.get("evidence_items", []) or [])
     summary["generated_assets"] = _to_plain_data(state.get("generated_assets") or {})
-
     return summary
 
 
@@ -144,59 +124,7 @@ def save_state_snapshot(run_id: str, state: dict[str, Any], name: str = "final_s
 def save_intermediate_note(run_id: str, label: str, content: str) -> str:
     safe_label = "".join(ch for ch in label if ch.isalnum() or ch in {"_", "-"}).strip("_")
     safe_label = safe_label or "note"
-
     path = INTERMEDIATE_DIR / run_id / f"{safe_label}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content or "", encoding="utf-8")
     return str(path.resolve())
-
-
-def _cache_key(*parts: object) -> str:
-    raw = "::".join(str(part) for part in parts)
-    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
-
-
-def load_reference_cache(
-    *,
-    source_name: str,
-    query: str,
-    max_results: int,
-) -> list[ReferenceItem] | None:
-    path = REFERENCE_CACHE_DIR / f"{_cache_key(source_name, query, max_results)}.json"
-
-    if not path.exists():
-        return None
-
-    try:
-        data = read_json(path)
-        return [ReferenceItem(**item) for item in data]
-    except Exception:
-        return None
-
-
-def save_reference_cache(
-    *,
-    source_name: str,
-    query: str,
-    max_results: int,
-    results: list[ReferenceItem],
-) -> None:
-    path = REFERENCE_CACHE_DIR / f"{_cache_key(source_name, query, max_results)}.json"
-    write_json(path, results)
-
-
-# Compatibility wrappers for old search.py / paper_search.py.
-def load_search_cache(*, search_api: str, query: str, max_results: int):
-    return load_reference_cache(source_name=search_api, query=query, max_results=max_results)
-
-
-def save_search_cache(*, search_api: str, query: str, max_results: int, results):
-    save_reference_cache(source_name=search_api, query=query, max_results=max_results, results=results)
-
-
-def load_paper_search_cache(*, backend: str, query: str, max_results: int):
-    return load_reference_cache(source_name=backend, query=query, max_results=max_results)
-
-
-def save_paper_search_cache(*, backend: str, query: str, max_results: int, results):
-    save_reference_cache(source_name=backend, query=query, max_results=max_results, results=results)

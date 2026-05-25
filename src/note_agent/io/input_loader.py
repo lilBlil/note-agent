@@ -1,4 +1,4 @@
-# note_agent/input_loader.py
+"""Text, file, and webpage input loading."""
 
 from pathlib import Path
 from typing import Iterable

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from note_agent.schemas import (
+from note_agent.assets.schemas import (
     AssetPlanItem,
     ChartBlock,
     ChartSeries,
@@ -10,14 +10,9 @@ from note_agent.schemas import (
     FormulaBlock,
     GeneratedAssets,
     MermaidBlock,
-    NoteAgentRequest,
-    NoteAgentResponse,
-    ReferenceItem,
-    ReferenceQuery,
-    RunRecord,
-    new_run_id,
-    now_iso,
 )
+from note_agent.domain.models import ReferenceItem, ReferenceQuery, RunRecord, new_run_id, now_iso
+from note_agent.domain.schemas import NoteAgentRequest, NoteAgentResponse
 
 
 class TestNowIso:

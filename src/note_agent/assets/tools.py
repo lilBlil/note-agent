@@ -6,7 +6,7 @@ import json
 import re
 from pathlib import Path
 
-from note_agent.schemas import (
+from note_agent.assets.schemas import (
     AssetPlanItem,
     ChartBlock,
     CodeBlock,
@@ -14,7 +14,7 @@ from note_agent.schemas import (
     GeneratedAssets,
     MermaidBlock,
 )
-from note_agent.storage import get_assets_dir, write_json
+from note_agent.io.storage import get_assets_dir, write_json
 
 LANGUAGE_EXTENSIONS: dict[str, str] = {
     "python": "py", "py": "py", "javascript": "js", "js": "js",
