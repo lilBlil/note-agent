@@ -1,0 +1,49 @@
+[project]
+name = "langchain-note-agent"
+version = "4.0.0"
+description = "A LangGraph and LangChain research note agent with retrieval, verification, and optional multimodal assets."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [
+  { name = "Note Agent Contributors" }
+]
+dependencies = [
+  "beautifulsoup4>=4.12.0",
+  "ddgs>=9.0.0",
+  "langchain>=0.3.0",
+  "langchain-core>=0.3.0",
+  "langchain-deepseek>=0.1.0",
+  "langchain-openai>=0.3.0",
+  "langgraph>=0.4.0",
+  "pydantic>=2.7.0",
+  "python-dotenv>=1.0.0",
+  "requests>=2.31.0",
+  "streamlit>=1.35.0",
+]
+
+[project.optional-dependencies]
+assets = [
+  "matplotlib>=3.8.0",
+]
+
+[project.scripts]
+note-agent = "note_agent.cli:main"
+note-agent-ui = "note_agent.web:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/note_agent"]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

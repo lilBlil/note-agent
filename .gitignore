@@ -3,4 +3,13 @@
 __pycache__/
 *.pyc
 .venv/
+.python-version
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.cache/
 notes/
+runs/
+dist/
+build/
+*.egg-info/

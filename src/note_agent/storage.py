@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from note_agent.models import ReferenceItem, RunRecord, now_iso
+from note_agent.schemas import ReferenceItem, RunRecord, now_iso
 
 
 RUNS_DIR = Path("runs")
@@ -62,6 +62,7 @@ def start_run(
     llm_provider: str,
     search_api: str,
     max_iterations: int,
+    enable_assets: bool = False,
 ) -> None:
     record = RunRecord(
         run_id=run_id,
@@ -70,6 +71,7 @@ def start_run(
         llm_provider=llm_provider,
         search_api=search_api,
         max_iterations=max_iterations,
+        enable_assets=enable_assets,
     )
     write_json(get_run_dir(run_id) / "run.json", record)
 
@@ -107,6 +109,7 @@ def summarize_state(state: dict[str, Any]) -> dict[str, Any]:
         "run_id",
         "note_type",
         "max_iterations",
+        "enable_assets",
         "iteration_count",
         "llm_provider",
         "search_api",

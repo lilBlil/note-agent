@@ -3,14 +3,20 @@ import re
 
 from langgraph.graph import END, START, StateGraph
 
-from note_agent.asset_tools import (
+from note_agent.utils import (
+    ask_llm,
+    emit_event,
+    emit_node_start,
+    normalize_query,
+    save_markdown,
+)
+from note_agent.utils.asset_tools import (
     build_asset_markdown_items,
     inject_assets_into_markdown,
     parse_asset_plan,
     parse_generated_assets,
     save_generated_assets,
 )
-from note_agent.models import ReferenceQuery
 from note_agent.prompts import (
     finalize_note_prompt,
     generate_assets_prompt,
@@ -28,15 +34,8 @@ from note_agent.retrieval import (
     format_references_for_prompt,
     retrieve_references,
 )
-from note_agent.state import NoteResearchState
+from note_agent.schemas import NoteResearchState, ReferenceQuery
 from note_agent.storage import append_event, save_intermediate_note
-from note_agent.tools import (
-    ask_llm,
-    emit_event,
-    emit_node_start,
-    normalize_query,
-    save_markdown,
-)
 
 
 def _dedupe_urls(urls: list[str]) -> list[str]:
@@ -191,7 +190,7 @@ def generate_reference_queries(state: NoteResearchState):
         source_types = item.get("source_types") or ["web", "academic"]
         if isinstance(source_types, str):
             source_types = [source_types]
-        source_types = [s for s in source_types if s in {"web", "paper", "book", "academic"}]
+        source_types = [s for s in source_types if s in {"web", "paper", "academic"}]
         if not source_types:
             source_types = ["web", "academic"]
 
@@ -214,7 +213,7 @@ def generate_reference_queries(state: NoteResearchState):
 
 
 def retrieve_references_node(state: NoteResearchState):
-    emit_node_start("retrieve_references", "正在统一检索网页、论文、书籍和学术资料")
+    emit_node_start("retrieve_references", "正在统一检索网页、论文和学术资料")
 
     current_round_results = []
     evidence_items = list(state.get("evidence_items", []))
@@ -338,6 +337,12 @@ def finalize_note(state: NoteResearchState):
         "final_note": final_note,
         "intermediate_paths": state.get("intermediate_paths", []) + [intermediate_path],
     }
+
+
+def route_after_finalize(state: NoteResearchState) -> str:
+    if state.get("enable_assets"):
+        return "assets"
+    return "save"
 
 
 def plan_note_assets(state: NoteResearchState):
@@ -486,7 +491,14 @@ def build_graph():
         },
     )
 
-    builder.add_edge("finalize_note", "plan_note_assets")
+    builder.add_conditional_edges(
+        "finalize_note",
+        route_after_finalize,
+        {
+            "assets": "plan_note_assets",
+            "save": "save_markdown",
+        },
+    )
     builder.add_edge("plan_note_assets", "generate_note_assets")
     builder.add_edge("generate_note_assets", "assemble_assets_into_note")
     builder.add_edge("assemble_assets_into_note", "save_markdown")

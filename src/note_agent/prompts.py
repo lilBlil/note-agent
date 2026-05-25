@@ -84,12 +84,11 @@ def generate_reference_queries_prompt(current_note: str, used_queries: list[str]
 可选 source_types：
 - web：官方文档、教程、项目资料、新闻、博客、产品说明、网页资料
 - paper：论文、预印本、算法来源、实验方法、benchmark、state-of-the-art
-- book：教材、专著、经典书籍、系统性理论来源
 - academic：综合学术资料，包括论文、书籍章节、学位论文、数据集等
 
 选择原则：
 1. 查最新研究、算法、实验结果、综述：优先 paper 或 academic
-2. 查经典概念、教材体系、理论脉络：优先 book 或 academic
+2. 查经典概念、教材体系、理论脉络：优先 academic
 3. 查官方用法、开源项目、教程、产品信息：优先 web
 4. 不确定时，可以混合 source_types，例如 ["web", "academic"]
 
@@ -140,7 +139,7 @@ def verify_note_prompt(raw_input: str, current_note: str, references: str) -> st
 3. 检查是否遗漏参考信息中与主题高度相关的重要信息
 4. 对每个问题尽量指出支持或冲突的来源编号，例如 [R1]、[R2]
 5. 理论、方法、实验、benchmark、综述类内容优先参考 paper / academic 来源
-6. 经典定义、理论脉络、教材型内容优先参考 book / academic 来源
+6. 经典定义、理论脉络、教材型内容优先参考 academic 来源
 7. 工具使用、项目实现、产品文档类内容优先参考 web 来源
 8. 不要重写整篇笔记，只输出核验报告
 9. 使用 Markdown
@@ -176,7 +175,7 @@ def refine_note_prompt(
 3. 必须补充参考信息中与主题高度相关的重要信息
 4. 对新增的外部事实，尽量在句尾标注来源编号，例如 [R1]
 5. 理论、方法、实验、综述类内容优先使用 paper / academic 证据
-6. 经典概念、教材体系、理论脉络优先使用 book / academic 证据
+6. 经典概念、教材体系、理论脉络优先使用 academic 证据
 7. 工具、项目、软件使用相关内容优先使用 web 证据
 8. 可以动态调整笔记结构
 9. 不要使用固定模板

@@ -2,8 +2,7 @@ from queue import Queue
 from threading import Thread
 
 from note_agent.graph import graph
-from note_agent.models import new_run_id
-from note_agent.schemas import NoteAgentRequest, NoteAgentResponse
+from note_agent.schemas import NoteAgentRequest, NoteAgentResponse, new_run_id
 from note_agent.storage import (
     append_event,
     finish_run,
@@ -11,7 +10,7 @@ from note_agent.storage import (
     save_state_snapshot,
     start_run,
 )
-from note_agent.tools import reset_event_handler, set_event_handler
+from note_agent.utils.events import reset_event_handler, set_event_handler
 
 
 def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:
@@ -22,6 +21,7 @@ def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:
         "iteration_count": 0,
         "llm_provider": request.llm_provider,
         "search_api": request.search_api,
+        "enable_assets": request.enable_assets,
         "note_type": "",
         "note_outline": [],
         "current_note": "",
@@ -65,6 +65,7 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
         llm_provider=request.llm_provider,
         search_api=request.search_api,
         max_iterations=request.max_iterations,
+        enable_assets=request.enable_assets,
     )
 
     def handler(event: dict):
@@ -99,6 +100,7 @@ def stream_note_agent(request: NoteAgentRequest):
         llm_provider=request.llm_provider,
         search_api=request.search_api,
         max_iterations=request.max_iterations,
+        enable_assets=request.enable_assets,
     )
 
     current_state = initial_state.copy()
@@ -139,6 +141,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
         llm_provider=request.llm_provider,
         search_api=request.search_api,
         max_iterations=request.max_iterations,
+        enable_assets=request.enable_assets,
     )
 
     q = Queue()

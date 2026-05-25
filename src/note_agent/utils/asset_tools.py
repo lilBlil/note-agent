@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 
-from note_agent.assets import (
+from note_agent.schemas import (
     AssetPlanItem,
     ChartBlock,
     CodeBlock,

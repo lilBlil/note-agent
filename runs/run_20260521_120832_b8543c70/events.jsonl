@@ -1,9 +1,0 @@
-{"created_at": "2026-05-21T12:08:32", "type": "node_start", "node_name": "infer_note_type", "step_label": "正在判断笔记类型"}
-{"created_at": "2026-05-21T12:08:34", "type": "node_start", "node_name": "generate_dynamic_outline", "step_label": "正在生成动态笔记结构"}
-{"created_at": "2026-05-21T12:08:38", "type": "node_start", "node_name": "generate_initial_note", "step_label": "正在生成笔记"}
-{"created_at": "2026-05-21T12:08:56", "type": "info", "text": "已保存初版中间笔记：D:\\langchain-note-agent\\notes\\intermediate\\run_20260521_120832_b8543c70\\iteration_0_initial.md"}
-{"created_at": "2026-05-21T12:08:56", "type": "node_start", "node_name": "generate_search_queries", "step_label": "正在分析信息缺口并生成检索问题"}
-{"created_at": "2026-05-21T12:08:59", "type": "node_start", "node_name": "web_search", "step_label": "正在使用 duckduckgo 进行网络检索"}
-{"created_at": "2026-05-21T12:08:59", "type": "info", "text": "正在搜索：Python 中如何实现最大堆（除了使用 heapq 取相反数）"}
-{"created_at": "2026-05-21T12:09:02", "type": "info", "text": "正在搜索：单调队列解决滑动窗口最大值问题的具体代码示例"}
-{"created_at": "2026-05-21T12:09:06", "type": "info", "text": "正在搜索：回溯算法中如何剪枝优化（以全排列或组合问题为例）"}

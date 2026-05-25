@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import requests
 from ddgs import DDGS
 
-from note_agent.models import ReferenceItem, ReferenceQuery, now_iso
+from note_agent.schemas import ReferenceItem, ReferenceQuery, now_iso
 from note_agent.storage import load_reference_cache, save_reference_cache
 
 
