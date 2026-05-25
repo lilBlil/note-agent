@@ -3,19 +3,19 @@ import re
 
 from langgraph.graph import END, START, StateGraph
 
+from note_agent.assets import (
+    build_asset_markdown_items,
+    inject_assets_into_markdown,
+    parse_asset_plan,
+    parse_generated_assets,
+    save_generated_assets,
+)
 from note_agent.utils import (
     ask_llm,
     emit_event,
     emit_node_start,
     normalize_query,
     save_markdown,
-)
-from note_agent.utils.asset_tools import (
-    build_asset_markdown_items,
-    inject_assets_into_markdown,
-    parse_asset_plan,
-    parse_generated_assets,
-    save_generated_assets,
 )
 from note_agent.prompts import (
     finalize_note_prompt,
