@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from note_agent.config.settings import get_model
-from note_agent.utils.events import emit_token, has_event_handler
+from config.settings import get_model
+from note_agent.io.events import emit_token, has_event_handler
 
 
 def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> str:

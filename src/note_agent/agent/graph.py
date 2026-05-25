@@ -10,13 +10,9 @@ from note_agent.assets.tools import (
     parse_generated_assets,
     save_generated_assets,
 )
-from note_agent.utils import (
-    ask_llm,
-    emit_event,
-    emit_node_start,
-    normalize_query,
-    save_markdown,
-)
+from config.llm import ask_llm
+from note_agent.io.events import emit_event, emit_node_start
+from note_agent.io.text import normalize_query, save_markdown
 from note_agent.agent.prompts import (
     finalize_note_prompt,
     generate_assets_prompt,

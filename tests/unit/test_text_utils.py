@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from note_agent.utils import normalize_query
+from note_agent.io.text import normalize_query
 
 
 class TestNormalizeQuery:

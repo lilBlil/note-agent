@@ -11,7 +11,7 @@ from note_agent.io.storage import (
     save_state_snapshot,
     start_run,
 )
-from note_agent.utils.events import reset_event_handler, set_event_handler
+from note_agent.io.events import reset_event_handler, set_event_handler
 
 
 def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:

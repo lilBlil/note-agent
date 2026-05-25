@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from note_agent.utils import clean_filename, strip_markdown_fence
+from note_agent.io.text import clean_filename, strip_markdown_fence
 
 
 class TestCleanFilename:
