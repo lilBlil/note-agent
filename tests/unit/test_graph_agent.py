@@ -1,6 +1,6 @@
-from note_agent import graph as graph_module
+from note_agent.agent import graph as graph_module
+from note_agent.agent.service import build_initial_state, build_response
 from note_agent.schemas import NoteAgentRequest
-from note_agent.service import build_initial_state, build_response
 
 
 def test_route_after_initial_note_respects_zero_iterations():
@@ -72,7 +72,7 @@ def test_build_initial_state_contains_v4_runtime_fields():
 
 
 def test_build_response_maps_optional_lists_and_run_dir(monkeypatch, tmp_path):
-    import note_agent.service as service
+    import note_agent.agent.service as service
 
     monkeypatch.setattr(service, "get_run_dir", lambda run_id: tmp_path / run_id)
 

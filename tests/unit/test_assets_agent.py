@@ -1,13 +1,13 @@
 import json
 
-from note_agent.asset_tools import (
+from note_agent.assets.schemas import CodeBlock, FormulaBlock, GeneratedAssets, MermaidBlock
+from note_agent.assets.tools import (
     build_asset_markdown_items,
     inject_assets_into_markdown,
     parse_asset_plan,
     parse_generated_assets,
     save_generated_assets,
 )
-from note_agent.assets import CodeBlock, FormulaBlock, GeneratedAssets, MermaidBlock
 
 
 def test_parse_asset_plan_accepts_fenced_json_array():
@@ -76,7 +76,7 @@ def test_build_asset_markdown_items_and_inject_by_heading():
 
 
 def test_save_generated_assets_writes_expected_files(tmp_path, monkeypatch):
-    import note_agent.asset_tools as asset_tools
+    import note_agent.assets.tools as asset_tools
 
     monkeypatch.setattr(asset_tools, "get_assets_dir", lambda run_id: tmp_path / run_id)
     monkeypatch.setattr(asset_tools, "render_chart_images", lambda run_id, charts: [])

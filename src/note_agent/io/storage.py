@@ -5,13 +5,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+from config.settings import get_settings
 from note_agent.models import ReferenceItem, RunRecord, now_iso
 
 
-RUNS_DIR = Path("runs")
-REFERENCE_CACHE_DIR = Path(".cache") / "references"
-INTERMEDIATE_DIR = Path("notes") / "intermediate"
-ASSETS_DIR = Path("notes") / "assets"
+_settings = get_settings()
+RUNS_DIR = _settings.runs_dir
+REFERENCE_CACHE_DIR = _settings.reference_cache_dir
+INTERMEDIATE_DIR = _settings.intermediate_dir_path
+ASSETS_DIR = _settings.assets_dir_path
 
 for directory in (RUNS_DIR, REFERENCE_CACHE_DIR, INTERMEDIATE_DIR, ASSETS_DIR):
     directory.mkdir(parents=True, exist_ok=True)

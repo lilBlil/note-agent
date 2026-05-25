@@ -5,6 +5,7 @@ langchain-deepseek
 langgraph
 python-dotenv
 pydantic
+pydantic-settings
 ddgs
 requests
 streamlit

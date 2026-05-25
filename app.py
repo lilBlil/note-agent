@@ -5,14 +5,15 @@ import html
 
 import streamlit as st
 
+from config.settings import get_settings
 from note_agent import __version__
-from note_agent.input_loader import (
+from note_agent.agent.service import stream_note_agent_events
+from note_agent.io.input_loader import (
     build_combined_input,
     fetch_webpage_text,
     read_uploaded_text_file,
 )
 from note_agent.schemas import NoteAgentRequest
-from note_agent.service import stream_note_agent_events
 
 
 st.set_page_config(
@@ -78,7 +79,16 @@ def parse_urls(raw_urls: str) -> list[str]:
     return [item for item in parts if item]
 
 
+def option_index(options: list[str], value: str) -> int:
+    try:
+        return options.index(value)
+    except ValueError:
+        return 0
+
+
 def main():
+    settings = get_settings()
+
     st.title(f"📝 Note Agent v{__version__}")
     st.caption(
         "LangGraph-based research note agent with unified reference retrieval, verification and multimodal assets."
@@ -87,35 +97,37 @@ def main():
     with st.sidebar:
         st.header("⚙️ Settings")
 
+        llm_provider_options = [
+            "deepseek",
+            "openai",
+            "qwen",
+            "moonshot",
+            "zhipu",
+            "siliconflow",
+        ]
         llm_provider = st.selectbox(
             "LLM Provider",
-            options=[
-                "deepseek",
-                "openai",
-                "qwen",
-                "moonshot",
-                "zhipu",
-                "siliconflow",
-            ],
-            index=0,
+            options=llm_provider_options,
+            index=option_index(llm_provider_options, settings.default_llm_provider),
         )
 
+        search_api_options = [
+            "duckduckgo",
+            "tavily",
+            "perplexity",
+            "searxng",
+        ]
         search_api = st.selectbox(
             "Web Search Backend",
-            options=[
-                "duckduckgo",
-                "tavily",
-                "perplexity",
-                "searxng",
-            ],
-            index=0,
+            options=search_api_options,
+            index=option_index(search_api_options, settings.search_api),
             help="统一检索中的网页来源使用该后端；论文、书籍和学术资料由内置来源自动处理。",
         )
 
         max_iterations = st.number_input(
             "Max Iterations",
             min_value=0,
-            value=2,
+            value=settings.default_max_iterations,
             step=1,
             help="0 表示不进行检索-核验-修正迭代，直接整理并保存初版笔记。",
         )

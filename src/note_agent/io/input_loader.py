@@ -1,5 +1,3 @@
-# note_agent/input_loader.py
-
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse

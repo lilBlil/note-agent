@@ -211,7 +211,26 @@ def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
 """
 
 
-def plan_assets_prompt(current_note: str, note_type: str) -> str:
+ASSET_TYPE_DESCRIPTIONS = {
+    "formula": "数学公式、理论公式、变量定义",
+    "code": "代码示例、伪代码、脚本片段",
+    "mermaid": "流程图、状态机图、架构图、因果关系图",
+    "chart": "基于结构化数据的折线图或柱状图",
+}
+
+
+def plan_assets_prompt(
+    current_note: str,
+    note_type: str,
+    enabled_asset_types: list[str] | None = None,
+) -> str:
+    enabled_asset_types = enabled_asset_types or list(ASSET_TYPE_DESCRIPTIONS)
+    available_assets = "\n".join(
+        f"- {asset_type}：{ASSET_TYPE_DESCRIPTIONS[asset_type]}"
+        for asset_type in enabled_asset_types
+        if asset_type in ASSET_TYPE_DESCRIPTIONS
+    )
+
     return f"""
 你是一个研究笔记资产规划 Agent。
 
@@ -224,10 +243,7 @@ def plan_assets_prompt(current_note: str, note_type: str) -> str:
 {current_note}
 
 可用资产类型：
-- formula：数学公式、理论公式、变量定义
-- code：代码示例、伪代码、脚本片段
-- mermaid：流程图、状态机图、架构图、因果关系图
-- chart：基于结构化数据的折线图或柱状图
+{available_assets}
 
 要求：
 1. 只在确实有必要时规划资产，不要为了凑数量而生成

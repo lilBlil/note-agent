@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import os
 import xml.etree.ElementTree as ET
 
 import requests
 from ddgs import DDGS
 
+from config.settings import get_settings
+from note_agent.io.storage import load_reference_cache, save_reference_cache
 from note_agent.models import ReferenceItem, ReferenceQuery, now_iso
-from note_agent.storage import load_reference_cache, save_reference_cache
 
 
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -81,9 +81,9 @@ def retrieve_tavily(query: str, max_results: int = 5) -> list[ReferenceItem]:
     source_name = "tavily"
 
     def loader():
-        api_key = os.getenv("TAVILY_API_KEY")
+        api_key = get_settings().tavily_api_key
         if not api_key:
-            raise ValueError("未找到 TAVILY_API_KEY，请检查 .env 文件")
+            raise ValueError("未找到 TAVILY_API_KEY，请检查 .env 或 env/.env 文件")
 
         response = requests.post(
             "https://api.tavily.com/search",
@@ -118,9 +118,9 @@ def retrieve_perplexity(query: str, max_results: int = 5) -> list[ReferenceItem]
     source_name = "perplexity"
 
     def loader():
-        api_key = os.getenv("PERPLEXITY_API_KEY")
+        api_key = get_settings().perplexity_api_key
         if not api_key:
-            raise ValueError("未找到 PERPLEXITY_API_KEY，请检查 .env 文件")
+            raise ValueError("未找到 PERPLEXITY_API_KEY，请检查 .env 或 env/.env 文件")
 
         response = requests.post(
             "https://api.perplexity.ai/chat/completions",
@@ -178,9 +178,9 @@ def retrieve_searxng(query: str, max_results: int = 5) -> list[ReferenceItem]:
     source_name = "searxng"
 
     def loader():
-        base_url = os.getenv("SEARXNG_URL")
+        base_url = get_settings().searxng_url
         if not base_url:
-            raise ValueError("未找到 SEARXNG_URL，请检查 .env 文件")
+            raise ValueError("未找到 SEARXNG_URL，请检查 .env 或 env/.env 文件")
 
         response = requests.get(
             f"{base_url.rstrip('/')}/search",
@@ -224,7 +224,7 @@ def retrieve_semantic_scholar(query: str, max_results: int = 5) -> list[Referenc
             ]
         )
         headers = {}
-        api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+        api_key = get_settings().semantic_scholar_api_key
         if api_key:
             headers["x-api-key"] = api_key
 

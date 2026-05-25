@@ -97,8 +97,8 @@ Agent 会根据当前笔记的信息缺口，自动生成统一检索请求：
 v4.0.0 新增资产生成模块：
 
 ```text
-src/note_agent/assets.py
-src/note_agent/asset_tools.py
+src/note_agent/assets/schemas.py
+src/note_agent/assets/tools.py
 ```
 
 支持生成：
@@ -132,8 +132,6 @@ Agent 会先规划当前笔记是否需要资产：
 然后再根据资产计划生成对应内容，并自动插入最终 Markdown。
 
 ---
-
-## 功能特点
 
 ## 功能特点
 
@@ -181,6 +179,10 @@ note-agent/
 │  ├─ demo1.py
 │  └─ demo2.py
 │
+├─ config/
+│  ├─ __init__.py
+│  └─ settings.py          # Pydantic settings and environment loading
+│
 ├─ notes/
 │  ├─ intermediate/
 │  └─ assets/
@@ -195,20 +197,73 @@ note-agent/
 │     ├─ __init__.py
 │     ├─ __main__.py
 │     ├─ cli.py
-│     ├─ state.py
-│     ├─ schemas.py
 │     ├─ models.py
-│     ├─ storage.py
-│     ├─ config.py
-│     ├─ prompts.py
-│     ├─ tools.py
-│     ├─ input_loader.py
+│     ├─ schemas.py
 │     ├─ retrieval.py
-│     ├─ assets.py
-│     ├─ asset_tools.py
-│     ├─ service.py
-│     └─ graph.py
+│     │
+│     ├─ agent/
+│     │  ├─ events.py
+│     │  ├─ graph.py
+│     │  ├─ llm.py
+│     │  ├─ prompts.py
+│     │  ├─ service.py
+│     │  └─ state.py
+│     │
+│     ├─ assets/
+│     │  ├─ schemas.py
+│     │  └─ tools.py
+│     │
+│     └─ io/
+│        ├─ input_loader.py
+│        ├─ markdown.py
+│        └─ storage.py
 ```
+
+---
+
+## 代码层级说明
+
+当前代码分层保持在轻量级状态：根层保留少量公共入口和单文件模块，只有确实形成内部职责边界的部分才拆成子目录。
+
+### 根层模块
+
+`src/note_agent/cli.py` 是命令行入口，负责收集输入、选择模型和检索后端，并调用 Agent service。
+
+`src/note_agent/models.py` 保存运行记录、参考信息、检索请求等项目内部数据模型。
+
+`src/note_agent/schemas.py` 保存对外请求和响应 schema，例如 `NoteAgentRequest` 和 `NoteAgentResponse`。
+
+`src/note_agent/retrieval.py` 是统一参考信息检索模块，集中处理 web、paper、book 和 academic 类型的检索来源。它目前仍是单文件模块，因为检索逻辑还没有复杂到需要继续拆成多个 source 文件。
+
+### `agent/`
+
+`agent/` 是核心 Agent 层，负责 LangGraph 状态机、LLM 调用、运行事件和对外 service。
+
+- `graph.py` 定义 LangGraph 节点、路由和完整工作流。
+- `prompts.py` 保存所有 prompt 模板。
+- `service.py` 封装同步运行、流式运行和响应构造。
+- `state.py` 定义 LangGraph 运行状态结构。
+- `llm.py` 根据 settings 创建模型客户端，并封装 `ask_llm`。
+- `events.py` 管理运行过程中的事件回调和 token 流。
+
+### `assets/`
+
+`assets/` 是多模态笔记资产层。
+
+- `schemas.py` 定义公式、代码块、Mermaid 图、图表等资产数据结构。
+- `tools.py` 负责解析资产规划、保存资产文件、生成图表图片，并将资产插入最终 Markdown。
+
+### `io/`
+
+`io/` 是输入输出和本地持久化层。
+
+- `input_loader.py` 负责读取手动文本、本地 `.txt` / `.md` 文件、Streamlit 上传文件和网页 URL。
+- `markdown.py` 负责 Markdown 文件名清理、代码围栏清理和最终笔记保存。
+- `storage.py` 负责运行日志、状态快照、中间笔记、资产目录和参考信息缓存。
+
+### `config/`
+
+`config/settings.py` 是项目统一配置入口，使用 Pydantic settings 管理环境变量、默认模型、检索后端、输出目录、缓存目录和资产生成开关。
 
 ---
 
@@ -257,7 +312,7 @@ Streamlit 可视化前端入口。
 
 ---
 
-### `src/note_agent/input_loader.py`
+### `src/note_agent/io/input_loader.py`
 
 统一输入加载模块。
 
@@ -293,7 +348,7 @@ ReferenceItem
 
 ---
 
-### `src/note_agent/assets.py`
+### `src/note_agent/assets/schemas.py`
 
 多模态资产数据结构模块。
 
@@ -308,7 +363,7 @@ ReferenceItem
 
 ---
 
-### `src/note_agent/asset_tools.py`
+### `src/note_agent/assets/tools.py`
 
 多模态资产处理模块。
 
@@ -326,7 +381,7 @@ ReferenceItem
 
 ---
 
-### `src/note_agent/graph.py`
+### `src/note_agent/agent/graph.py`
 
 LangGraph 状态机核心。
 
@@ -347,7 +402,7 @@ LangGraph 状态机核心。
 
 ---
 
-### `src/note_agent/storage.py`
+### `src/note_agent/io/storage.py`
 
 运行记录、参考信息缓存和资产保存模块。
 
@@ -363,7 +418,7 @@ LangGraph 状态机核心。
 
 ---
 
-### `src/note_agent/service.py`
+### `src/note_agent/agent/service.py`
 
 Service Layer。
 
@@ -692,6 +747,14 @@ copy .env.example .env
 配置 `.env`：
 
 ```env
+DEFAULT_LLM_PROVIDER=deepseek
+DEFAULT_MAX_ITERATIONS=2
+SEARCH_API=duckduckgo
+
+LLM_API_KEY=your_provider_api_key
+LLM_MODEL=
+LLM_BASE_URL=
+
 DEEPSEEK_API_KEY=
 OPENAI_API_KEY=
 DASHSCOPE_API_KEY=
@@ -699,26 +762,28 @@ MOONSHOT_API_KEY=
 ZHIPU_API_KEY=
 SILICONFLOW_API_KEY=
 
-SEARCH_API=duckduckgo
-
 TAVILY_API_KEY=
 PERPLEXITY_API_KEY=
-SEARXNG_URL=
-
+SEARXNG_URL=http://localhost:8888
 SEMANTIC_SCHOLAR_API_KEY=
 
-DEFAULT_LLM_PROVIDER=deepseek
-DEFAULT_MAX_ITERATIONS=2
+NOTES_DIR=notes
+RUNS_DIR=runs
+REFERENCE_CACHE_DIR=.cache/references
+ENABLED_ASSET_TYPES=formula,code,mermaid,chart
 ```
 
 说明：
 
 - 默认模型提供方为 `deepseek`
 - 默认 Web Search Backend 为 `duckduckgo`
+- 单模型使用场景可以只配置 `LLM_API_KEY`，并通过 `DEFAULT_LLM_PROVIDER` 指定供应商
+- Provider-specific API key 会优先于 `LLM_API_KEY`
 - 使用 Tavily 需要配置 `TAVILY_API_KEY`
 - 使用 Perplexity 需要配置 `PERPLEXITY_API_KEY`
 - 使用 SearXNG 需要配置 `SEARXNG_URL`
 - `SEMANTIC_SCHOLAR_API_KEY` 可选，不填也可以使用 Semantic Scholar，但配置后更稳定
+- 路径类配置支持相对路径，相对项目根目录解析
 
 ---
 
@@ -788,8 +853,8 @@ uv run streamlit run app.py
 - 统一数据结构 `ReferenceItem`
 - 统一检索请求 `ReferenceQuery`
 - 参考信息缓存 `.cache/references/`
-- 多模态资产结构 `assets.py`
-- 多模态资产工具 `asset_tools.py`
+- 多模态资产结构 `assets/schemas.py`
+- 多模态资产工具 `assets/tools.py`
 - 公式生成
 - 代码生成
 - Mermaid 图生成

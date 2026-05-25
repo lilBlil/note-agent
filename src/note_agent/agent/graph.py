@@ -1,17 +1,10 @@
 import json
 import re
 
+from config.settings import get_settings
 from langgraph.graph import END, START, StateGraph
 
-from note_agent.asset_tools import (
-    build_asset_markdown_items,
-    inject_assets_into_markdown,
-    parse_asset_plan,
-    parse_generated_assets,
-    save_generated_assets,
-)
-from note_agent.models import ReferenceQuery
-from note_agent.prompts import (
+from note_agent.agent.prompts import (
     finalize_note_prompt,
     generate_assets_prompt,
     generate_initial_note_prompt,
@@ -23,19 +16,26 @@ from note_agent.prompts import (
     refine_note_prompt,
     verify_note_prompt,
 )
+from note_agent.agent.state import NoteResearchState
+from note_agent.assets.tools import (
+    build_asset_markdown_items,
+    inject_assets_into_markdown,
+    parse_asset_plan,
+    parse_generated_assets,
+    save_generated_assets,
+)
+from note_agent.agent.events import (
+    emit_event,
+    emit_node_start,
+)
+from note_agent.agent.llm import ask_llm
+from note_agent.io.markdown import normalize_query, save_markdown
+from note_agent.io.storage import append_event, save_intermediate_note
+from note_agent.models import ReferenceQuery
 from note_agent.retrieval import (
     collect_reference_urls,
     format_references_for_prompt,
     retrieve_references,
-)
-from note_agent.state import NoteResearchState
-from note_agent.storage import append_event, save_intermediate_note
-from note_agent.tools import (
-    ask_llm,
-    emit_event,
-    emit_node_start,
-    normalize_query,
-    save_markdown,
 )
 
 
@@ -343,16 +343,26 @@ def finalize_note(state: NoteResearchState):
 def plan_note_assets(state: NoteResearchState):
     emit_node_start("plan_note_assets", "正在规划公式、代码、图表和流程图")
 
+    enabled_asset_types = get_settings().enabled_asset_type_list
+    if not enabled_asset_types:
+        emit_event("info", text="环境变量未启用任何资产类型，跳过资产规划。")
+        return {"asset_plan": []}
+
     text = ask_llm(
         plan_assets_prompt(
             current_note=state["final_note"],
             note_type=state["note_type"],
+            enabled_asset_types=enabled_asset_types,
         ),
         provider=state["llm_provider"],
         stream=True,
     )
 
-    plan_items = parse_asset_plan(text)
+    plan_items = [
+        item
+        for item in parse_asset_plan(text)
+        if item.asset_type in enabled_asset_types
+    ]
     plan_data = [_model_dump(item) for item in plan_items]
 
     emit_event("info", text=f"资产规划数量：{len(plan_data)}")

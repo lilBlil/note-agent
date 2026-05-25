@@ -1,18 +1,12 @@
-import os
-
-from dotenv import load_dotenv
-
+from config.settings import get_settings
 from note_agent import __version__
-from note_agent.input_loader import (
+from note_agent.agent.service import run_note_agent
+from note_agent.io.input_loader import (
     build_combined_input,
     fetch_webpage_text,
     read_text_file,
 )
 from note_agent.schemas import NoteAgentRequest
-from note_agent.service import run_note_agent
-
-
-load_dotenv()
 
 
 def collect_manual_input() -> str:
@@ -97,7 +91,7 @@ def select_provider() -> str:
         "6": "siliconflow",
     }
 
-    return mapping.get(choice, os.getenv("DEFAULT_LLM_PROVIDER", "deepseek"))
+    return mapping.get(choice, get_settings().default_llm_provider)
 
 
 def select_search_api() -> str:
@@ -116,7 +110,7 @@ def select_search_api() -> str:
         "4": "searxng",
     }
 
-    return mapping.get(choice, os.getenv("SEARCH_API", "duckduckgo"))
+    return mapping.get(choice, get_settings().search_api)
 
 
 def main() -> None:
@@ -133,9 +127,16 @@ def main() -> None:
         webpage_texts=webpage_texts,
     )
 
-    max_iterations = input("\n请输入迭代次数，0 表示跳过检索核验，建议 1-3：\n> ").strip()
+    default_iterations = get_settings().default_max_iterations
+    max_iterations = input(
+        f"\n请输入迭代次数，0 表示跳过检索核验，建议 1-3，默认 {default_iterations}：\n> "
+    ).strip()
 
-    if not max_iterations.isdigit():
+    if not max_iterations:
+        max_iterations_value = default_iterations
+    elif max_iterations.isdigit():
+        max_iterations_value = int(max_iterations)
+    else:
         raise ValueError("迭代次数必须是整数")
 
     provider = select_provider()
@@ -143,7 +144,7 @@ def main() -> None:
 
     request = NoteAgentRequest(
         raw_input=raw_input,
-        max_iterations=int(max_iterations),
+        max_iterations=max_iterations_value,
         llm_provider=provider,
         search_api=search_api,
     )
