@@ -1,6 +1,6 @@
-# Streamlit UI for Note Agent.
+"""Streamlit UI for Note Agent."""
 
-import html
+from __future__ import annotations
 
 import streamlit as st
 
@@ -13,368 +13,249 @@ from note_agent.input_loader import (
 from note_agent.schemas import NoteAgentRequest
 from note_agent.service import stream_note_agent_events
 
+st.set_page_config(page_title="Note Agent", page_icon="📝", layout="wide")
 
-st.set_page_config(
-    page_title="Note Agent",
-    page_icon="📝",
-    layout="wide",
-)
-
-
-def render_scroll_box(content: str, height: int = 320) -> str:
-    """渲染可滚动文本框，避免 Streamlit text_area 重复 key 问题。"""
-    safe_content = html.escape(content or "")
-    return f"""
-    <div style="
-        height: {height}px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        padding: 14px;
-        border: 1px solid rgba(255,255,255,0.15);
-        border-radius: 10px;
-        background-color: rgba(30, 32, 42, 0.95);
-        font-family: Consolas, Menlo, Monaco, monospace;
-        font-size: 14px;
-        line-height: 1.6;
-    ">
-{safe_content}
-    </div>
-    """
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-def render_node_list(node_records: list[dict]) -> str:
-    lines = []
-
-    for item in node_records:
-        status = item.get("status", "pending")
-        label = item.get("label", "")
-        node = item.get("node", "")
-
-        if status == "running":
-            icon = "🔄"
-            tag = "正在运行"
-        elif status == "done":
-            icon = "✅"
-            tag = "已完成"
-        else:
-            icon = "•"
-            tag = "等待中"
-
-        lines.append(f"{icon} {label}\n   节点：{node}\n   状态：{tag}\n")
-
-    return "\n".join(lines)
+def _status_icon(status: str) -> str:
+    return {"running": "🔵", "done": "🟢", "pending": "⚪"}.get(status, "⚪")
 
 
-def parse_urls(raw_urls: str) -> list[str]:
-    """支持换行或英文逗号分隔 URL。"""
-    raw_urls = raw_urls or ""
-    parts = []
-
-    for line in raw_urls.splitlines():
-        parts.extend(item.strip() for item in line.split(","))
-
-    return [item for item in parts if item]
+def _parse_urls(raw: str) -> list[str]:
+    parts: list[str] = []
+    for line in (raw or "").splitlines():
+        parts.extend(s.strip() for s in line.split(","))
+    return [s for s in parts if s]
 
 
-def main():
-    st.title(f"📝 Note Agent v{__version__}")
-    st.caption(
-        "LangGraph-based research note agent with retrieval, verification, and focused output."
-    )
+# ---------------------------------------------------------------------------
+# Sidebar
+# ---------------------------------------------------------------------------
 
+
+def _build_sidebar() -> tuple:
     with st.sidebar:
-        st.header("⚙️ Settings")
+        st.title("Note Agent")
+        st.caption(f"v{__version__}")
+        st.divider()
 
-        llm_provider = st.selectbox(
-            "LLM Provider",
-            options=[
-                "deepseek",
-                "openai",
-                "qwen",
-                "moonshot",
-                "zhipu",
-                "siliconflow",
-            ],
+        llm = st.selectbox(
+            "LLM",
+            ["deepseek", "openai", "qwen", "moonshot", "zhipu", "siliconflow"],
             index=0,
         )
-
-        search_api = st.selectbox(
-            "Web Search Backend",
-            options=[
-                "duckduckgo",
-                "tavily",
-                "perplexity",
-                "searxng",
-            ],
+        search = st.selectbox(
+            "Search",
+            ["duckduckgo", "tavily", "perplexity", "searxng"],
             index=0,
-            help="统一检索中的网页来源使用该后端；论文和学术资料由内置来源自动处理。",
         )
-
-        max_iterations = st.number_input(
-            "Max Iterations",
+        iters = st.number_input(
+            "Max iterations",
             min_value=0,
             value=1,
             step=1,
-            help="0 表示不进行检索-核验-修正迭代，直接整理并保存初版笔记。",
+            help="0 = single-pass, no verify loop.",
         )
-
-        with st.expander("Advanced", expanded=False):
-            enable_assets = st.checkbox(
-                "Generate multimodal assets",
-                value=False,
-                help=(
-                    "Generate formulas, code snippets, Mermaid diagrams, and charts "
-                    "after the note is finalized."
-                ),
-            )
+        assets = st.checkbox("Generate assets", value=False)
 
         st.divider()
+        with st.expander("About", expanded=False):
+            st.markdown(
+                "LangGraph research agent with search, verification, and "
+                "multimodal asset generation. Inputs: text, `.txt`/`.md` "
+                "files, or webpage URLs."
+            )
+    return llm, search, int(iters), assets
 
-        st.markdown("### 当前功能")
-        st.markdown(
-            """
-            - 手动文本输入
-            - `.txt` / `.md` 文件上传
-            - 网页 URL 导入
-            - 动态笔记结构生成
-            - 统一参考信息检索
-            - 覆盖网页 / 论文 / 学术资料
-            - 搜索缓存
-            - 事实检验
-            - 默认 1 轮核验修正
-            - 可选公式 / 代码 / Mermaid / 图表资产生成
-            - 中间版本保存
-            - 运行日志持久化
-            - Markdown 自动保存
-            - 运行节点展示
-            - 逐字流式输出
-            """
+
+# ---------------------------------------------------------------------------
+# Input section
+# ---------------------------------------------------------------------------
+
+
+def _build_input_section() -> tuple:
+    st.header("New Research Note", divider="rainbow")
+    tabs = st.tabs(["Write", "Upload", "URLs"])
+
+    with tabs[0]:
+        text = st.text_area(
+            "Topic or keywords",
+            height=200,
+            placeholder="LangChain Agent\nLangGraph workflow\nMemory\nRAG",
+            label_visibility="collapsed",
         )
 
-    left_col, right_col = st.columns([1, 1])
-
-    with left_col:
-        st.subheader("输入来源")
-
-        manual_text = st.text_area(
-            label="手动输入文本 / 关键词",
-            height=180,
-            placeholder=(
-                "例如：\n"
-                "LangChain Agent\n"
-                "LangGraph workflow\n"
-                "Memory\n"
-                "RAG\n"
-            ),
-        )
-
-        uploaded_files = st.file_uploader(
-            "上传 .txt / .md 文件",
+    with tabs[1]:
+        files = st.file_uploader(
+            "Upload `.txt` or `.md`",
             type=["txt", "md"],
             accept_multiple_files=True,
+            label_visibility="collapsed",
         )
 
-        raw_urls = st.text_area(
-            label="网页 URL",
-            height=90,
-            placeholder="多个 URL 可换行填写，也可用英文逗号分隔",
+    with tabs[2]:
+        urls = st.text_area(
+            "One URL per line",
+            height=120,
+            placeholder="https://example.com/article",
+            label_visibility="collapsed",
         )
 
-        run_button = st.button(
-            "🚀 生成研究笔记",
-            type="primary",
-            use_container_width=True,
+    col, _ = st.columns([1, 3])
+    with col:
+        run = st.button("Generate", type="primary", use_container_width=True)
+
+    return text, files, urls, run
+
+
+# ---------------------------------------------------------------------------
+# Run logic
+# ---------------------------------------------------------------------------
+
+
+def _run_agent(
+    manual_text: str,
+    uploaded_files: list,
+    raw_urls: str,
+    llm: str,
+    search: str,
+    max_iters: int,
+    enable_assets: bool,
+) -> None:
+    file_texts: list[tuple[str, str]] = []
+    webpage_texts: list[tuple[str, str]] = []
+
+    try:
+        for f in uploaded_files or []:
+            content = read_uploaded_text_file(f.name, f.getvalue())
+            file_texts.append((f.name, content))
+        for url in _parse_urls(raw_urls):
+            webpage_texts.append((url, fetch_webpage_text(url)))
+        combined = build_combined_input(
+            manual_text=manual_text,
+            file_texts=file_texts,
+            webpage_texts=webpage_texts,
         )
+    except Exception as exc:
+        st.error(f"Input error: {exc}")
+        st.stop()
 
-        st.subheader("运行节点")
-        node_area = st.empty()
-        node_area.markdown(
-            render_scroll_box("等待运行...", height=300),
-            unsafe_allow_html=True,
-        )
-
-    with right_col:
-        st.subheader("当前步骤输出")
-
-        step_area = st.empty()
-        step_area.markdown(
-            render_scroll_box("运行后，这里会显示当前节点的逐字输出。", height=300),
-            unsafe_allow_html=True,
-        )
-
-        st.subheader("检索过程 / 中间版本")
-        search_area = st.empty()
-        search_area.markdown(
-            render_scroll_box("暂无检索信息。", height=180),
-            unsafe_allow_html=True,
-        )
-
-        st.subheader("Sources")
-        source_area = st.empty()
-        source_area.markdown(
-            render_scroll_box("暂无来源。", height=180),
-            unsafe_allow_html=True,
-        )
-
-    st.divider()
-
-    st.subheader("最终 Markdown 笔记预览")
-
-    final_area = st.empty()
-    final_area.markdown(
-        render_scroll_box(
-            st.session_state.get(
-                "last_note",
-                "运行 Agent 后，这里会显示最终 Markdown 笔记。",
-            ),
-            height=520,
-        ),
-        unsafe_allow_html=True,
+    request = NoteAgentRequest(
+        raw_input=combined,
+        max_iterations=max_iters,
+        llm_provider=llm,
+        search_api=search,
+        enable_assets=enable_assets,
     )
 
-    result_area = st.empty()
+    # Placeholders
+    result_tabs = st.tabs(["Progress", "Final Note", "Sources", "Run Info"])
+    with result_tabs[0]:
+        progress_ph = st.empty()
+        step_ph = st.empty()
+    with result_tabs[1]:
+        note_ph = st.empty()
+    with result_tabs[2]:
+        source_ph = st.empty()
+    with result_tabs[3]:
+        info_ph = st.empty()
 
-    if run_button:
-        file_texts = []
-        webpage_texts = []
+    nodes: list[dict] = []
+    step_output = ""
+    sources: list[str] = []
 
-        try:
-            for uploaded_file in uploaded_files or []:
-                text = read_uploaded_text_file(
-                    uploaded_file.name,
-                    uploaded_file.getvalue(),
+    try:
+        for event in stream_note_agent_events(request):
+            etype = event.get("type")
+
+            if etype == "node_start":
+                if nodes:
+                    nodes[-1]["status"] = "done"
+                nodes.append({
+                    "node": event["node_name"],
+                    "label": event["step_label"],
+                    "status": "running",
+                })
+                step_output = f"### {event['step_label']}\n\n"
+
+            elif etype == "token":
+                step_output += event.get("text", "")
+
+            elif etype == "done":
+                if nodes:
+                    nodes[-1]["status"] = "done"
+                st.session_state.last_note = event["state"].get("final_note", "")
+                sources = event["state"].get("sources", [])
+
+            elif etype == "error":
+                st.error(f"Run failed: {event.get('message')}")
+                break
+
+            # Render
+            with result_tabs[0]:
+                badges = "  ".join(
+                    f"{_status_icon(n['status'])} `{n['label']}`" for n in nodes
                 )
-                file_texts.append((uploaded_file.name, text))
+                progress_ph.markdown(badges or "Waiting…")
+                step_ph.markdown(step_output)
 
-            for url in parse_urls(raw_urls):
-                text = fetch_webpage_text(url)
-                webpage_texts.append((url, text))
+            with result_tabs[1]:
+                note_ph.markdown(
+                    st.session_state.get("last_note", "*Generating…*")
+                )
 
-            raw_input = build_combined_input(
-                manual_text=manual_text,
-                file_texts=file_texts,
-                webpage_texts=webpage_texts,
-            )
+            with result_tabs[2]:
+                if sources:
+                    source_ph.markdown(
+                        "\n".join(f"- {s}" for s in sorted(set(sources)))
+                    )
+                else:
+                    source_ph.caption("Sources will appear here.")
 
-        except Exception as e:
-            st.error(f"输入加载失败：{e}")
-            return
+            with result_tabs[3]:
+                lines = [
+                    f"**Run ID:** `{event.get('run_id', '—')}`",
+                    f"**Log:** `{event.get('run_log_dir', '—')}`",
+                ]
+                if etype == "done":
+                    state = event["state"]
+                    lines.append(f"**Saved:** `{state.get('saved_path', '—')}`")
+                    ipaths = state.get("intermediate_paths") or []
+                    apaths = state.get("asset_paths") or []
+                    if ipaths:
+                        lines.append(f"**Versions:** {len(ipaths)} saved")
+                    if apaths:
+                        lines.append(f"**Assets:** {len(apaths)} generated")
+                info_ph.markdown("\n\n".join(filter(None, lines)))
 
-        request = NoteAgentRequest(
-            raw_input=raw_input,
-            max_iterations=int(max_iterations),
-            llm_provider=llm_provider,
-            search_api=search_api,
-            enable_assets=enable_assets,
+    except Exception as exc:
+        st.error(f"Unexpected error: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    llm, search, max_iters, enable_assets = _build_sidebar()
+    manual_text, uploaded_files, raw_urls, run = _build_input_section()
+
+    if run:
+        st.session_state["_active_run"] = True
+        st.session_state["_run_params"] = (
+            manual_text, uploaded_files, raw_urls,
+            llm, search, max_iters, enable_assets,
         )
 
-        node_records = []
-        current_step_output = ""
-        search_logs = []
-        sources = []
-
+    if st.session_state.get("_active_run"):
         try:
-            for event in stream_note_agent_events(request):
-                event_type = event.get("type")
-
-                if event_type == "node_start":
-                    if node_records:
-                        node_records[-1]["status"] = "done"
-
-                    node_name = event["node_name"]
-                    step_label = event["step_label"]
-
-                    node_records.append(
-                        {
-                            "node": node_name,
-                            "label": step_label,
-                            "status": "running",
-                        }
-                    )
-
-                    current_step_output = f"【{step_label}】\n\n"
-
-                elif event_type == "token":
-                    current_step_output += event.get("text", "")
-
-                elif event_type == "info":
-                    search_logs.append(event.get("text", ""))
-
-                elif event_type == "done":
-                    if node_records:
-                        node_records[-1]["status"] = "done"
-
-                    latest_state = event["state"]
-                    sources = latest_state.get("sources", [])
-
-                    st.session_state.last_note = latest_state.get("final_note", "")
-
-                    result_area.success("笔记生成完成。")
-                    result_area.markdown("**保存路径：**")
-                    result_area.code(latest_state.get("saved_path", ""))
-
-                    result_area.markdown("**运行 ID：**")
-                    result_area.code(event.get("run_id", ""))
-
-                    result_area.markdown("**运行日志目录：**")
-                    result_area.code(event.get("run_log_dir", ""))
-
-                    if latest_state.get("intermediate_paths"):
-                        result_area.markdown("**中间版本：**")
-                        result_area.code("\n".join(latest_state.get("intermediate_paths", [])))
-
-                    if latest_state.get("asset_paths"):
-                        result_area.markdown("**生成资产：**")
-                        result_area.code("\n".join(latest_state.get("asset_paths", [])))
-
-                elif event_type == "error":
-                    result_area.error(f"运行失败：{event.get('message')}")
-                    result_area.markdown("**运行 ID：**")
-                    result_area.code(event.get("run_id", ""))
-                    result_area.markdown("**运行日志目录：**")
-                    result_area.code(event.get("run_log_dir", ""))
-                    break
-
-                node_area.markdown(
-                    render_scroll_box(render_node_list(node_records), height=300),
-                    unsafe_allow_html=True,
-                )
-
-                step_area.markdown(
-                    render_scroll_box(current_step_output, height=300),
-                    unsafe_allow_html=True,
-                )
-
-                search_area.markdown(
-                    render_scroll_box(
-                        "\n".join(search_logs) if search_logs else "暂无检索信息。",
-                        height=180,
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-                source_area.markdown(
-                    render_scroll_box(
-                        "\n".join(sorted(set(sources))) if sources else "暂无来源。",
-                        height=180,
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-                final_area.markdown(
-                    render_scroll_box(
-                        st.session_state.get(
-                            "last_note",
-                            "最终笔记生成后会显示在这里。",
-                        ),
-                        height=520,
-                    ),
-                    unsafe_allow_html=True,
-                )
-
-        except Exception as e:
-            st.error(f"运行失败：{e}")
+            _run_agent(*st.session_state["_run_params"])
+        finally:
+            st.session_state["_active_run"] = False
 
 
 if __name__ == "__main__":
