@@ -1,4 +1,4 @@
-from note_agent.assets.schemas import (
+from note_agent.assets.types import (
     AssetPlanItem,
     ChartBlock,
     ChartSeries,

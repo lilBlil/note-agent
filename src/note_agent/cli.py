@@ -10,8 +10,8 @@ from note_agent.io.input_loader import (
     fetch_webpage_text,
     read_text_file,
 )
-from note_agent.domain.schemas import NoteAgentRequest
-from note_agent.agent.service import run_note_agent
+from note_agent.domain.api import NoteAgentRequest
+from note_agent.agent.runner import run_note_agent
 
 
 load_dotenv()

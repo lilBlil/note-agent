@@ -3,7 +3,7 @@ from threading import Thread
 
 from note_agent.agent.graph import graph
 from note_agent.domain.models import new_run_id
-from note_agent.domain.schemas import NoteAgentRequest, NoteAgentResponse
+from note_agent.domain.api import NoteAgentRequest, NoteAgentResponse
 from note_agent.io.storage import (
     append_event,
     finish_run,

@@ -10,8 +10,8 @@ from note_agent.io.input_loader import (
     fetch_webpage_text,
     read_uploaded_text_file,
 )
-from note_agent.domain.schemas import NoteAgentRequest
-from note_agent.agent.service import stream_note_agent_events
+from note_agent.domain.api import NoteAgentRequest
+from note_agent.agent.runner import stream_note_agent_events
 
 st.set_page_config(page_title="Note Agent", page_icon="📝", layout="wide")
 

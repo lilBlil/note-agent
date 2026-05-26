@@ -9,7 +9,7 @@ from note_agent.domain.models import (
     new_run_id,
     now_iso,
 )
-from note_agent.domain.schemas import NoteAgentRequest, NoteAgentResponse
+from note_agent.domain.api import NoteAgentRequest, NoteAgentResponse
 
 # Backward-compatible aliases exposed at the old schemas level.
 SearchResultItem = ReferenceItem
