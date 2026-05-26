@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, TypedDict
+from typing import Any, Literal, TypedDict
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -79,21 +79,21 @@ class NoteResearchState(TypedDict):
     enable_assets: bool
 
     note_type: str
-    note_outline: List[Dict[str, str]]
+    note_outline: list[dict[str, str]]
     current_note: str
 
-    reference_queries: List[Dict[str, Any]]
-    used_reference_queries: List[str]
-    reference_results: List[ReferenceItem]
-    evidence_items: List[ReferenceItem]
-    sources: List[str]
+    reference_queries: list[dict[str, Any]]
+    used_reference_queries: list[str]
+    reference_results: list[ReferenceItem]
+    evidence_items: list[ReferenceItem]
+    sources: list[str]
 
     verification_report: str
 
     final_note: str
     saved_path: str
-    intermediate_paths: List[str]
+    intermediate_paths: list[str]
 
-    asset_plan: List[Dict[str, Any]]
-    generated_assets: Dict[str, Any]
-    asset_paths: List[str]
+    asset_plan: list[dict[str, Any]]
+    generated_assets: dict[str, Any]
+    asset_paths: list[str]

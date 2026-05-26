@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path
 
 NOTES_DIR = Path("notes")
-NOTES_DIR.mkdir(exist_ok=True)
 
 
 def normalize_query(query: str) -> str:
@@ -43,6 +42,7 @@ def strip_markdown_fence(content: str) -> str:
 
 
 def save_markdown(title: str, content: str) -> str:
+    NOTES_DIR.mkdir(parents=True, exist_ok=True)
     safe_title = clean_filename(title)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     content = strip_markdown_fence(content)

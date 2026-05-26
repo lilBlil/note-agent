@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from note_agent.domain.models import ReferenceItem, ReferenceQuery
-from note_agent.retrieval.sources import retrieve_by_source_type
+from note_agent.retrieval.sources import retrieve_by_source_type, dedupe_references
 
 
 def retrieve_references(
@@ -27,19 +27,7 @@ def retrieve_references(
         except Exception:
             continue
 
-    # Deduplicate
-    seen: set[str] = set()
-    deduped: list[ReferenceItem] = []
-    for item in results:
-        key = (
-            (item.doi or "").lower().strip()
-            or (item.url or "").lower().strip()
-            or f"{item.title.lower().strip()}::{item.year or ''}::{item.source_name}"
-        )
-        if key and key not in seen:
-            deduped.append(item)
-            seen.add(key)
-    return deduped
+    return dedupe_references(results)
 
 
 def format_references_for_prompt(results: list[ReferenceItem]) -> str:

@@ -1,7 +1,7 @@
 from queue import Queue
 from threading import Thread
 
-from note_agent.agent.graph import graph
+from note_agent.agent.graph import get_graph
 from note_agent.domain.models import new_run_id
 from note_agent.domain.api import NoteAgentRequest, NoteAgentResponse
 from note_agent.io.storage import (
@@ -76,7 +76,7 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
     token = set_event_handler(handler)
 
     try:
-        result = graph.invoke(initial_state)
+        result = get_graph().invoke(initial_state)
         save_state_snapshot(run_id, result)
         finish_run(
             run_id=run_id,
@@ -107,7 +107,7 @@ def stream_note_agent(request: NoteAgentRequest):
     current_state = initial_state.copy()
 
     try:
-        for event in graph.stream(initial_state, stream_mode="updates"):
+        for event in get_graph().stream(initial_state, stream_mode="updates"):
             for node_name, update in event.items():
                 current_state.update(update)
                 append_event(
@@ -155,7 +155,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
     def run_graph():
         token = set_event_handler(handler)
         try:
-            result = graph.invoke(initial_state)
+            result = get_graph().invoke(initial_state)
             save_state_snapshot(run_id, result)
             finish_run(
                 run_id=run_id,

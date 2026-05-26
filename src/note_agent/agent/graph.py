@@ -1,5 +1,4 @@
 import json
-import re
 
 from langgraph.graph import END, START, StateGraph
 
@@ -10,7 +9,7 @@ from note_agent.assets.tools import (
     parse_generated_assets,
     save_generated_assets,
 )
-from config.llm import ask_llm
+from note_agent.config.llm import ask_llm
 from note_agent.io.events import emit_event, emit_node_start
 from note_agent.io.text import normalize_query, save_markdown
 from note_agent.agent.prompts import (
@@ -32,49 +31,18 @@ from note_agent.retrieval.retriever import (
 )
 from note_agent.domain.models import NoteResearchState, ReferenceQuery
 from note_agent.io.storage import append_event, save_intermediate_note
+from note_agent.utils import extract_json_object, to_plain_data
 
 
 def _dedupe_urls(urls: list[str]) -> list[str]:
-    seen = set()
-    result = []
-
+    seen: set[str] = set()
+    result: list[str] = []
     for url in urls:
         url = (url or "").strip()
         if url and url not in seen:
             result.append(url)
             seen.add(url)
-
     return result
-
-
-def _extract_json_object(text: str) -> dict:
-    text = (text or "").strip()
-
-    if text.startswith("```json"):
-        text = text[len("```json") :].strip()
-    elif text.startswith("```"):
-        text = text[len("```") :].strip()
-
-    if text.endswith("```"):
-        text = text[:-3].strip()
-
-    match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-    if match:
-        text = match.group(0)
-
-    try:
-        data = json.loads(text)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def _model_dump(obj):
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if hasattr(obj, "dict"):
-        return obj.dict()
-    return obj
 
 
 def infer_note_type(state: NoteResearchState):
@@ -163,7 +131,7 @@ def generate_reference_queries(state: NoteResearchState):
         stream=True,
     )
 
-    data = _extract_json_object(text)
+    data = extract_json_object(text)
     raw_items = data.get("reference_queries", [])
     if not isinstance(raw_items, list):
         raw_items = []
@@ -195,7 +163,7 @@ def generate_reference_queries(state: NoteResearchState):
             source_types=source_types,
             reason=str(item.get("reason", "")),
         )
-        reference_queries.append(_model_dump(reference_query))
+        reference_queries.append(to_plain_data(reference_query))
         used_query_texts.append(query)
         used.add(normalized)
 
@@ -354,7 +322,7 @@ def plan_note_assets(state: NoteResearchState):
     )
 
     plan_items = parse_asset_plan(text)
-    plan_data = [_model_dump(item) for item in plan_items]
+    plan_data = [to_plain_data(item) for item in plan_items]
 
     emit_event("info", text=f"资产规划数量：{len(plan_data)}")
 
@@ -388,7 +356,7 @@ def generate_note_assets(state: NoteResearchState):
     emit_event("info", text=f"已生成并保存资产文件：{len(asset_paths)} 个")
 
     return {
-        "generated_assets": _model_dump(generated_assets),
+        "generated_assets": to_plain_data(generated_assets),
         "asset_paths": asset_paths,
     }
 
@@ -503,4 +471,11 @@ def build_graph():
     return builder.compile()
 
 
-graph = build_graph()
+_graph = None
+
+
+def get_graph():
+    global _graph
+    if _graph is None:
+        _graph = build_graph()
+    return _graph

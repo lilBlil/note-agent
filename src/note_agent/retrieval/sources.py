@@ -8,7 +8,7 @@ import xml.etree.ElementTree as ET
 import requests
 from ddgs import DDGS
 
-from note_agent.domain.models import ReferenceItem, ReferenceQuery, now_iso
+from note_agent.domain.models import ReferenceItem, now_iso
 from note_agent.retrieval.cache import load_reference_cache, save_reference_cache
 
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -24,7 +24,7 @@ def _clean_text(value: str | None) -> str:
     return " ".join(str(value).split())
 
 
-def _dedupe(items: list[ReferenceItem]) -> list[ReferenceItem]:
+def dedupe_references(items: list[ReferenceItem]) -> list[ReferenceItem]:
     seen: set[str] = set()
     result: list[ReferenceItem] = []
     for item in items:
@@ -209,7 +209,7 @@ def retrieve_semantic_scholar(query: str, max_results: int = 5) -> list[Referenc
                     retrieved_at=now_iso(),
                 )
             )
-        return _dedupe(results)
+        return dedupe_references(results)
 
     return _cached(source_name, query, max_results, loader)
 
@@ -254,7 +254,7 @@ def retrieve_arxiv(query: str, max_results: int = 5) -> list[ReferenceItem]:
                     source_type="paper", source_name=source_name, retrieved_at=now_iso(),
                 )
             )
-        return _dedupe(results)
+        return dedupe_references(results)
 
     return _cached(source_name, query, max_results, loader)
 
@@ -286,7 +286,7 @@ def retrieve_google_books(query: str, max_results: int = 5) -> list[ReferenceIte
                     source_type="book", source_name=source_name, retrieved_at=now_iso(),
                 )
             )
-        return _dedupe(results)
+        return dedupe_references(results)
 
     return _cached(source_name, query, max_results, loader)
 
@@ -312,7 +312,7 @@ def retrieve_open_library(query: str, max_results: int = 5) -> list[ReferenceIte
                     source_type="book", source_name=source_name, retrieved_at=now_iso(),
                 )
             )
-        return _dedupe(results)
+        return dedupe_references(results)
 
     return _cached(source_name, query, max_results, loader)
 
@@ -345,7 +345,7 @@ def retrieve_openalex(query: str, max_results: int = 5) -> list[ReferenceItem]:
                     source_type=source_type, source_name=source_name, retrieved_at=now_iso(),
                 )
             )
-        return _dedupe(results)
+        return dedupe_references(results)
 
     return _cached(source_name, query, max_results, loader)
 
@@ -375,7 +375,7 @@ def retrieve_by_source_type(
                 results.extend(fn(query, max_results=max_results))
             except Exception:
                 continue
-        return _dedupe(results)
+        return dedupe_references(results)
 
     if source_type == "book":
         results = []
@@ -384,7 +384,7 @@ def retrieve_by_source_type(
                 results.extend(fn(query, max_results=max_results))
             except Exception:
                 continue
-        return _dedupe(results)
+        return dedupe_references(results)
 
     if source_type == "academic":
         results = []
@@ -393,6 +393,6 @@ def retrieve_by_source_type(
                 results.extend(fn(query, max_results=max_results))
             except Exception:
                 continue
-        return _dedupe(results)
+        return dedupe_references(results)
 
     return []

@@ -7,33 +7,17 @@ from pathlib import Path
 from typing import Any
 
 from note_agent.domain.models import RunRecord, now_iso
+from note_agent.utils import to_plain_data
 
 RUNS_DIR = Path("runs")
 INTERMEDIATE_DIR = Path("notes") / "intermediate"
 ASSETS_DIR = Path("notes") / "assets"
 
-for _d in (RUNS_DIR, INTERMEDIATE_DIR, ASSETS_DIR):
-    _d.mkdir(parents=True, exist_ok=True)
-
-
-def _to_plain_data(value: Any) -> Any:
-    if hasattr(value, "model_dump"):
-        return value.model_dump()
-    if hasattr(value, "dict"):
-        return value.dict()
-    if isinstance(value, list):
-        return [_to_plain_data(item) for item in value]
-    if isinstance(value, tuple):
-        return [_to_plain_data(item) for item in value]
-    if isinstance(value, dict):
-        return {key: _to_plain_data(item) for key, item in value.items()}
-    return value
-
 
 def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(_to_plain_data(data), ensure_ascii=False, indent=2),
+        json.dumps(to_plain_data(data), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -93,25 +77,29 @@ def finish_run(
 
 def append_event(run_id: str, event: dict[str, Any]) -> None:
     event_path = get_run_dir(run_id) / "events.jsonl"
-    payload = {"created_at": now_iso(), **_to_plain_data(event)}
+    payload = {"created_at": now_iso(), **to_plain_data(event)}
     with event_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
+_SNAPSHOT_KEYS = (
+    "run_id", "note_type", "max_iterations", "enable_assets",
+    "iteration_count", "llm_provider", "search_api",
+    "reference_queries", "used_reference_queries", "sources",
+    "saved_path", "intermediate_paths", "asset_paths", "asset_plan",
+)
+_SNAPSHOT_TEXT_KEYS = ("current_note", "verification_report", "final_note")
+_TEXT_PREVIEW_LIMIT = 1000
+
+
 def summarize_state(state: dict[str, Any]) -> dict[str, Any]:
-    keys = [
-        "run_id", "note_type", "max_iterations", "enable_assets",
-        "iteration_count", "llm_provider", "search_api",
-        "reference_queries", "used_reference_queries", "sources",
-        "saved_path", "intermediate_paths", "asset_paths", "asset_plan",
-    ]
-    summary = {key: _to_plain_data(state.get(key)) for key in keys if key in state}
-    for text_key in ("current_note", "verification_report", "final_note"):
+    summary = {key: to_plain_data(state.get(key)) for key in _SNAPSHOT_KEYS if key in state}
+    for text_key in _SNAPSHOT_TEXT_KEYS:
         value = state.get(text_key, "")
-        summary[text_key] = value[:1000] if isinstance(value, str) else value
-    summary["reference_results_count"] = len(state.get("reference_results", []) or [])
-    summary["evidence_items_count"] = len(state.get("evidence_items", []) or [])
-    summary["generated_assets"] = _to_plain_data(state.get("generated_assets") or {})
+        summary[text_key] = value[:_TEXT_PREVIEW_LIMIT] if isinstance(value, str) else value
+    summary["reference_results_count"] = len(state.get("reference_results") or [])
+    summary["evidence_items_count"] = len(state.get("evidence_items") or [])
+    summary["generated_assets"] = to_plain_data(state.get("generated_assets") or {})
     return summary
 
 

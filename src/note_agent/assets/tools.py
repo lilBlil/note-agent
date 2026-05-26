@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
@@ -15,6 +14,7 @@ from note_agent.assets.types import (
     MermaidBlock,
 )
 from note_agent.io.storage import get_assets_dir, write_json
+from note_agent.utils import extract_json_array_or_object
 
 LANGUAGE_EXTENSIONS: dict[str, str] = {
     "python": "py", "py": "py", "javascript": "js", "js": "js",
@@ -25,34 +25,21 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
 }
 
 
-def _extract_json_text(text: str) -> str:
-    text = (text or "").strip()
-    if text.startswith("```json"):
-        text = text[len("```json"):].strip()
-    elif text.startswith("```"):
-        text = text[len("```"):].strip()
-    if text.endswith("```"):
-        text = text[:-3].strip()
-    m = re.search(r"\[.*\]", text, flags=re.DOTALL)
-    if m:
-        return m.group(0)
-    m = re.search(r"\{.*\}", text, flags=re.DOTALL)
-    return m.group(0) if m else text
-
-
 def parse_asset_plan(text: str) -> list[AssetPlanItem]:
     try:
-        data = json.loads(_extract_json_text(text))
+        data = extract_json_array_or_object(text)
         if isinstance(data, dict):
             data = data.get("assets", [])
-        return [AssetPlanItem(**item) for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+        if not isinstance(data, list):
+            return []
+        return [AssetPlanItem(**item) for item in data if isinstance(item, dict)]
     except Exception:
         return []
 
 
 def parse_generated_assets(text: str) -> GeneratedAssets:
     try:
-        data = json.loads(_extract_json_text(text))
+        data = extract_json_array_or_object(text)
         return GeneratedAssets(**data) if isinstance(data, dict) else GeneratedAssets()
     except Exception:
         return GeneratedAssets()

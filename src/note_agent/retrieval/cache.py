@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 from note_agent.domain.models import ReferenceItem
+from note_agent.utils import to_plain_data
 
 REFERENCE_CACHE_DIR = Path(".cache") / "references"
-REFERENCE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _cache_key(*parts: object) -> str:
@@ -26,7 +27,6 @@ def load_reference_cache(
     if not path.exists():
         return None
     try:
-        import json
         data = json.loads(path.read_text(encoding="utf-8"))
         return [ReferenceItem(**item) for item in data]
     except Exception:
@@ -40,29 +40,9 @@ def save_reference_cache(
     max_results: int,
     results: list[ReferenceItem],
 ) -> None:
-    import json
-    from note_agent.io.storage import _to_plain_data
-
     path = REFERENCE_CACHE_DIR / f"{_cache_key(source_name, query, max_results)}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(_to_plain_data(results), ensure_ascii=False, indent=2),
+        json.dumps(to_plain_data(results), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-
-
-# Backward-compatible aliases
-def load_search_cache(*, search_api: str, query: str, max_results: int):
-    return load_reference_cache(source_name=search_api, query=query, max_results=max_results)
-
-
-def save_search_cache(*, search_api: str, query: str, max_results: int, results):
-    save_reference_cache(source_name=search_api, query=query, max_results=max_results, results=results)
-
-
-def load_paper_search_cache(*, backend: str, query: str, max_results: int):
-    return load_reference_cache(source_name=backend, query=query, max_results=max_results)
-
-
-def save_paper_search_cache(*, backend: str, query: str, max_results: int, results):
-    save_reference_cache(source_name=backend, query=query, max_results=max_results, results=results)
