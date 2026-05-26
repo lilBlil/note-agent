@@ -27,13 +27,13 @@ note-agent/
 │  ├─ web.py                    # Streamlit 界面入口
 │  ├─ domain/
 │  │  ├─ models.py              # 领域模型（ReferenceItem, NoteResearchState 等）
-│  │  └─ schemas.py             # I/O schema（NoteAgentRequest/Response）
+│  │  └─ api.py                  # I/O schema（NoteAgentRequest/Response）
 │  ├─ agent/
 │  │  ├─ graph.py               # LangGraph 工作流
-│  │  ├─ service.py             # 同步/流式服务层
+│  │  ├─ runner.py              # 同步/流式服务层
 │  │  └─ prompts.py             # LLM 提示词模板
 │  ├─ retrieval/
-│  │  ├─ service.py             # 检索编排与格式化
+│  │  ├─ retriever.py           # 检索编排与格式化
 │  │  ├─ sources.py             # 8 种搜索后端（Web/论文/书籍/学术）
 │  │  └─ cache.py               # 检索结果缓存
 │  ├─ io/
@@ -42,7 +42,7 @@ note-agent/
 │  │  ├─ storage.py             # 运行日志、状态快照、中间文件
 │  │  └─ text.py                # 文本/Markdown 工具
 │  └─ assets/
-│     ├─ schemas.py             # 资产 Pydantic 模型
+│     ├─ types.py               # 资产 Pydantic 模型
 │     └─ tools.py               # 资产生成与 Markdown 注入
 ├─ tests/
 │  ├─ conftest.py
