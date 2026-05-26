@@ -16,18 +16,19 @@
 
 ```text
 note-agent/
-├─ config/
-│  ├─ settings.py               # LLM 模型配置
-│  └─ llm.py                    # LLM 调用封装
 ├─ scripts/
 │  └─ main.py                   # CLI 兼容 wrapper
 ├─ src/note_agent/
 │  ├─ __init__.py               # 版本号
 │  ├─ cli.py                    # 命令行交互入口
 │  ├─ web.py                    # Streamlit 界面入口
+│  ├─ utils.py                  # 通用工具函数
+│  ├─ config/
+│  │  ├─ settings.py            # LLM 模型配置
+│  │  └─ llm.py                 # LLM 调用封装
 │  ├─ domain/
 │  │  ├─ models.py              # 领域模型（ReferenceItem, NoteResearchState 等）
-│  │  └─ api.py                  # I/O schema（NoteAgentRequest/Response）
+│  │  └─ api.py                 # I/O schema（NoteAgentRequest/Response）
 │  ├─ agent/
 │  │  ├─ graph.py               # LangGraph 工作流
 │  │  ├─ runner.py              # 同步/流式服务层
