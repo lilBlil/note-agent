@@ -2,6 +2,7 @@ from queue import Queue
 from threading import Thread
 
 from note_agent.agent.graph import get_graph
+from note_agent.agent.tracker import reset_usage, summarize_usage
 from note_agent.domain.models import new_run_id
 from note_agent.domain.api import NoteAgentRequest, NoteAgentResponse
 from note_agent.io.storage import (
@@ -57,6 +58,7 @@ def build_response(result: dict) -> NoteAgentResponse:
 
 
 def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
+    reset_usage()
     run_id = new_run_id()
     initial_state = build_initial_state(request, run_id)
 
@@ -153,6 +155,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
             append_event(run_id, event)
 
     def run_graph():
+        reset_usage()
         token = set_event_handler(handler)
         try:
             result = get_graph().invoke(initial_state)
@@ -168,6 +171,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
                     "state": result,
                     "run_id": run_id,
                     "run_log_dir": str(get_run_dir(run_id).resolve()),
+                    "usage": summarize_usage(),
                 }
             )
         except Exception as e:

@@ -229,6 +229,29 @@ def _run_agent(
                         lines.append(f"**Versions:** {len(ipaths)} saved")
                     if apaths:
                         lines.append(f"**Assets:** {len(apaths)} generated")
+
+                    usage = event.get("usage") or {}
+                    total = usage.get("total_tokens") or 0
+                    if total > 0:
+                        ti = usage["total_input_tokens"]
+                        to = usage["total_output_tokens"]
+                        tt = usage["total_tokens"]
+                        lines.append(
+                            f"**Tokens:** {tt:,} total "
+                            f"(in: {ti:,}, out: {to:,})"
+                        )
+                        by_node = usage.get("by_node") or {}
+                        if by_node:
+                            rows = [
+                                f"| `{k}` | {v['calls']} | {v['input_tokens']:,} "
+                                f"| {v['output_tokens']:,} | {v['input_tokens'] + v['output_tokens']:,} |"
+                                for k, v in by_node.items()
+                            ]
+                            lines.append(
+                                "| Node | Calls | In | Out | Total |\n"
+                                "|------|-------|----|-----|-------|\n"
+                                + "\n".join(rows)
+                            )
                 info_ph.markdown("\n\n".join(filter(None, lines)))
 
     except Exception as exc:
