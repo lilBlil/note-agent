@@ -9,7 +9,16 @@ def _extract_usage(response) -> tuple[int, int]:
     """Return (input_tokens, output_tokens) from a LangChain AIMessage or AIMessageChunk."""
     try:
         meta = response.usage_metadata or {}
-        return meta.get("input_tokens", 0), meta.get("output_tokens", 0)
+        inp = meta.get("input_tokens", 0) or meta.get("prompt_tokens", 0)
+        out = meta.get("output_tokens", 0) or meta.get("completion_tokens", 0)
+
+        if not inp and not out:
+            meta = response.response_metadata or {}
+            token_usage = meta.get("token_usage", {}) or {}
+            inp = token_usage.get("prompt_tokens", 0) or token_usage.get("input_tokens", 0)
+            out = token_usage.get("completion_tokens", 0) or token_usage.get("output_tokens", 0)
+
+        return inp, out
     except Exception:
         return 0, 0
 
@@ -38,10 +47,13 @@ def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> st
         return str(response.content)
 
     chunks: list[str] = []
-    last_chunk = None
+    input_tokens = 0
+    output_tokens = 0
     should_print = not has_event_handler()
     for chunk in llm.stream(prompt):
-        last_chunk = chunk
+        in_tok, out_tok = _extract_usage(chunk)
+        input_tokens = input_tokens or in_tok
+        output_tokens = output_tokens or out_tok
         if chunk.content:
             emit_token(chunk.content)
             if should_print:
@@ -50,14 +62,12 @@ def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> st
     if should_print:
         print()
 
-    if last_chunk is not None:
-        input_tokens, output_tokens = _extract_usage(last_chunk)
-        record_usage(
-            node_name=_current_node.get(),
-            step_label=_current_step.get(),
-            provider=provider,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-        )
+    record_usage(
+        node_name=_current_node.get(),
+        step_label=_current_step.get(),
+        provider=provider,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
     return "".join(chunks)

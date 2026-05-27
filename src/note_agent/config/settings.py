@@ -43,11 +43,18 @@ def get_model(provider: str = "deepseek"):
     api_key = os.getenv(str(cfg["api_key_env"]))
     if not api_key:
         raise ValueError(f"Missing {cfg['api_key_env']} — check .env")
+    model_kwargs = {"stream_options": {"include_usage": True}}
     if provider == "deepseek":
-        return ChatDeepSeek(model=str(cfg["model"]), api_key=api_key, temperature=0.3)
+        return ChatDeepSeek(
+            model=str(cfg["model"]),
+            api_key=api_key,
+            temperature=0.3,
+            model_kwargs=model_kwargs,
+        )
     return ChatOpenAI(
         model=str(cfg["model"]),
         api_key=api_key,
         base_url=str(cfg["base_url"] or ""),
         temperature=0.3,
+        model_kwargs=model_kwargs,
     )
