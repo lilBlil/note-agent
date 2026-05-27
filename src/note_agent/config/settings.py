@@ -12,24 +12,24 @@ load_dotenv()
 
 MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
     "deepseek": {"model": "deepseek-chat", "api_key_env": "DEEPSEEK_API_KEY", "base_url": None},
-    "openai": {"model": "gpt-4o-mini", "api_key_env": "OPENAI_API_KEY", "base_url": None},
+    "openai": {"model": "gpt-4o", "api_key_env": "OPENAI_API_KEY", "base_url": None},
     "qwen": {
-        "model": "qwen-plus",
+        "model": "qwen-max",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     },
     "moonshot": {
-        "model": "moonshot-v1-8k",
+        "model": "moonshot-v1-128k",
         "api_key_env": "MOONSHOT_API_KEY",
         "base_url": "https://api.moonshot.cn/v1",
     },
     "zhipu": {
-        "model": "glm-4-flash",
+        "model": "glm-4-plus",
         "api_key_env": "ZHIPU_API_KEY",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
     },
     "siliconflow": {
-        "model": "Qwen/Qwen2.5-7B-Instruct",
+        "model": "deepseek-ai/DeepSeek-V3",
         "api_key_env": "SILICONFLOW_API_KEY",
         "base_url": "https://api.siliconflow.cn/v1",
     },
