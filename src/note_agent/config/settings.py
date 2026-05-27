@@ -11,7 +11,7 @@ from langchain_openai import ChatOpenAI
 load_dotenv()
 
 MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
-    "deepseek": {"model": "deepseek-chat", "api_key_env": "DEEPSEEK_API_KEY", "base_url": None},
+    "deepseek": {"model": "deepseek-v4-pro", "api_key_env": "DEEPSEEK_API_KEY", "base_url": None},
     "openai": {"model": "gpt-4o", "api_key_env": "OPENAI_API_KEY", "base_url": None},
     "qwen": {
         "model": "qwen-max",
