@@ -11,6 +11,7 @@
 - 自动保存最终笔记、中间版本、运行日志和生成资产
 - Streamlit 可视化界面
 - 可选公式、代码、Mermaid 图和图表资产生成
+- 一键发布笔记到 Notion（子页面模式）
 
 ## 项目结构
 
@@ -42,9 +43,13 @@ note-agent/
 │  │  ├─ input_loader.py        # 文本/文件/网页输入加载
 │  │  ├─ storage.py             # 运行日志、状态快照、中间文件
 │  │  └─ text.py                # 文本/Markdown 工具
-│  └─ assets/
-│     ├─ types.py               # 资产 Pydantic 模型
-│     └─ tools.py               # 资产生成与 Markdown 注入
+│  ├─ assets/
+│  │  ├─ types.py               # 资产 Pydantic 模型
+│  │  └─ tools.py               # 资产生成与 Markdown 注入
+│  └─ notion/
+│     ├─ client.py              # Notion SDK 封装
+│     ├─ converter.py           # Markdown → Notion blocks
+│     └─ publish.py             # 发布编排
 ├─ tests/
 │  ├─ conftest.py
 │  ├─ unit/                     # 单元测试
@@ -72,6 +77,12 @@ uv sync
 uv sync --extra assets
 ```
 
+如果需要发布笔记到 Notion：
+
+```bash
+uv sync --extra notion
+```
+
 ## 配置
 
 复制环境变量模板：
@@ -93,7 +104,18 @@ SILICONFLOW_API_KEY=your_siliconflow_api_key
 DEFAULT_LLM_PROVIDER=deepseek
 SEARCH_API=duckduckgo
 DEFAULT_MAX_ITERATIONS=1
+
+# Notion（可选）
+NOTION_API_KEY=your_notion_integration_secret
+NOTION_PARENT_PAGE_ID=your_notion_parent_page_id
 ```
+
+### Notion 集成步骤
+
+1. 访问 [Notion Integrations](https://www.notion.so/my-integrations) 创建集成，复制 **Internal Integration Secret** 填入 `NOTION_API_KEY`
+2. 在 Notion 中创建一个页面作为笔记的父页面，从 URL 中复制 32 位页面 ID 填入 `NOTION_PARENT_PAGE_ID`
+3. 在集成页面点击 **Add connections**，授权该父页面
+4. 在 Streamlit 界面侧边栏勾选 **"Publish to Notion"** 即可
 
 ## 运行
 
