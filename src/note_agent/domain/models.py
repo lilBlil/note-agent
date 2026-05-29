@@ -62,6 +62,8 @@ class RunRecord(BaseModel):
     search_api: str = ""
     max_iterations: int = 0
     enable_assets: bool = False
+    enable_notion: bool = False
+    notion_url: str = ""
     saved_path: str = ""
     error: str = ""
     created_at: str = Field(default_factory=now_iso)
@@ -77,6 +79,7 @@ class NoteResearchState(TypedDict):
     llm_provider: str
     search_api: str
     enable_assets: bool
+    enable_notion: bool
 
     note_type: str
     note_outline: list[dict[str, str]]
@@ -91,6 +94,8 @@ class NoteResearchState(TypedDict):
     verification_report: str
 
     final_note: str
+    note_title: str
+    notion_url: str
     saved_path: str
     intermediate_paths: list[str]
 

@@ -24,6 +24,7 @@ def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:
         "llm_provider": request.llm_provider,
         "search_api": request.search_api,
         "enable_assets": request.enable_assets,
+        "enable_notion": request.enable_notion,
         "note_type": "",
         "note_outline": [],
         "current_note": "",
@@ -34,7 +35,9 @@ def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:
         "sources": [],
         "verification_report": "",
         "final_note": "",
+        "note_title": "",
         "saved_path": "",
+        "notion_url": "",
         "intermediate_paths": [],
         "asset_plan": [],
         "generated_assets": {},
@@ -48,6 +51,7 @@ def build_response(result: dict) -> NoteAgentResponse:
         note_type=result["note_type"],
         final_note=result["final_note"],
         saved_path=result["saved_path"],
+        notion_url=result.get("notion_url", ""),
         sources=result.get("sources", []),
         used_reference_queries=result.get("used_reference_queries", []),
         iterations=result["iteration_count"],
@@ -69,6 +73,7 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
         search_api=request.search_api,
         max_iterations=request.max_iterations,
         enable_assets=request.enable_assets,
+        enable_notion=request.enable_notion,
     )
 
     def handler(event: dict):
@@ -84,6 +89,7 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
             run_id=run_id,
             status="success",
             saved_path=result.get("saved_path", ""),
+            notion_url=result.get("notion_url", ""),
         )
         return build_response(result)
     except Exception as e:
@@ -104,6 +110,7 @@ def stream_note_agent(request: NoteAgentRequest):
         search_api=request.search_api,
         max_iterations=request.max_iterations,
         enable_assets=request.enable_assets,
+        enable_notion=request.enable_notion,
     )
 
     current_state = initial_state.copy()
@@ -127,6 +134,7 @@ def stream_note_agent(request: NoteAgentRequest):
             run_id=run_id,
             status="success",
             saved_path=current_state.get("saved_path", ""),
+            notion_url=current_state.get("notion_url", ""),
         )
         yield "done", {}, current_state
     except Exception as e:
@@ -145,6 +153,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
         search_api=request.search_api,
         max_iterations=request.max_iterations,
         enable_assets=request.enable_assets,
+        enable_notion=request.enable_notion,
     )
 
     q = Queue()
@@ -164,6 +173,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
                 run_id=run_id,
                 status="success",
                 saved_path=result.get("saved_path", ""),
+                notion_url=result.get("notion_url", ""),
             )
             q.put(
                 {

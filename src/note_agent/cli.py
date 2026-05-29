@@ -181,6 +181,10 @@ def main():
         for path in response.asset_paths:
             print(path)
 
+    if response.notion_url:
+        print("\nNotion 页面：")
+        print(response.notion_url)
+
 
 if __name__ == "__main__":
     main()

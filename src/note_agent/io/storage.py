@@ -46,6 +46,7 @@ def start_run(
     search_api: str,
     max_iterations: int,
     enable_assets: bool = False,
+    enable_notion: bool = False,
 ) -> None:
     record = RunRecord(
         run_id=run_id,
@@ -55,6 +56,7 @@ def start_run(
         search_api=search_api,
         max_iterations=max_iterations,
         enable_assets=enable_assets,
+        enable_notion=enable_notion,
     )
     write_json(get_run_dir(run_id) / "run.json", record)
 
@@ -64,12 +66,14 @@ def finish_run(
     run_id: str,
     status: str,
     saved_path: str = "",
+    notion_url: str = "",
     error: str = "",
 ) -> None:
     run_path = get_run_dir(run_id) / "run.json"
     data = read_json(run_path) if run_path.exists() else {"run_id": run_id}
     data["status"] = status
     data["saved_path"] = saved_path
+    data["notion_url"] = notion_url
     data["error"] = error
     data["updated_at"] = now_iso()
     write_json(run_path, data)
@@ -86,7 +90,7 @@ _SNAPSHOT_KEYS = (
     "run_id", "note_type", "max_iterations", "enable_assets",
     "iteration_count", "llm_provider", "search_api",
     "reference_queries", "used_reference_queries", "sources",
-    "saved_path", "intermediate_paths", "asset_paths", "asset_plan",
+    "saved_path", "notion_url", "intermediate_paths", "asset_paths", "asset_plan",
 )
 _SNAPSHOT_TEXT_KEYS = ("current_note", "verification_report", "final_note")
 _TEXT_PREVIEW_LIMIT = 1000

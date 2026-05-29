@@ -4,10 +4,12 @@ from langgraph.graph import END, START, StateGraph
 
 from note_agent.assets.tools import (
     build_asset_markdown_items,
+    filter_asset_plan,
     inject_assets_into_markdown,
     parse_asset_plan,
     parse_generated_assets,
     save_generated_assets,
+    validate_generated_assets,
 )
 from note_agent.config.llm import ask_llm
 from note_agent.io.events import emit_event, emit_node_start
@@ -31,6 +33,7 @@ from note_agent.retrieval.retriever import (
 )
 from note_agent.domain.models import NoteResearchState, ReferenceQuery
 from note_agent.io.storage import append_event, save_intermediate_note
+from note_agent.notion import publish_note
 from note_agent.utils import extract_json_object, to_plain_data
 
 
@@ -322,9 +325,10 @@ def plan_note_assets(state: NoteResearchState):
     )
 
     plan_items = parse_asset_plan(text)
+    plan_items = filter_asset_plan(plan_items, state["final_note"])
     plan_data = [to_plain_data(item) for item in plan_items]
 
-    emit_event("info", text=f"资产规划数量：{len(plan_data)}")
+    emit_event("info", text=f"资产规划数量（过滤后）：{len(plan_data)}")
 
     return {"asset_plan": plan_data}
 
@@ -351,6 +355,7 @@ def generate_note_assets(state: NoteResearchState):
     )
 
     generated_assets = parse_generated_assets(text)
+    generated_assets = validate_generated_assets(generated_assets)
     asset_paths = save_generated_assets(state["run_id"], generated_assets)
 
     emit_event("info", text=f"已生成并保存资产文件：{len(asset_paths)} 个")
@@ -410,7 +415,46 @@ def save_markdown_node(state: NoteResearchState):
         },
     )
 
-    return {"saved_path": saved_path}
+    return {"saved_path": saved_path, "note_title": title}
+
+
+def publish_notion_node(state: NoteResearchState):
+    emit_node_start("publish_notion", "正在发布到 Notion")
+
+    title = state.get("note_title", "").strip()
+    if not title:
+        for line in state["final_note"].splitlines():
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+    if not title:
+        title = "Untitled Note"
+
+    try:
+        notion_url = publish_note(
+            markdown=state["final_note"],
+            title=title,
+        )
+        emit_event("info", text=f"已发布到 Notion：{notion_url}")
+
+        append_event(
+            state["run_id"],
+            {
+                "type": "notion_published",
+                "notion_url": notion_url,
+            },
+        )
+
+        return {"notion_url": notion_url}
+    except Exception as e:
+        emit_event("error", text=f"Notion 发布失败：{e}")
+        return {"notion_url": ""}
+
+
+def route_after_save(state: NoteResearchState) -> str:
+    if state.get("enable_notion"):
+        return "publish_notion"
+    return "end"
 
 
 def build_graph():
@@ -428,6 +472,7 @@ def build_graph():
     builder.add_node("generate_note_assets", generate_note_assets)
     builder.add_node("assemble_assets_into_note", assemble_assets_into_note)
     builder.add_node("save_markdown", save_markdown_node)
+    builder.add_node("publish_notion", publish_notion_node)
 
     builder.add_edge(START, "infer_note_type")
     builder.add_edge("infer_note_type", "generate_dynamic_outline")
@@ -466,7 +511,16 @@ def build_graph():
     builder.add_edge("plan_note_assets", "generate_note_assets")
     builder.add_edge("generate_note_assets", "assemble_assets_into_note")
     builder.add_edge("assemble_assets_into_note", "save_markdown")
-    builder.add_edge("save_markdown", END)
+
+    builder.add_conditional_edges(
+        "save_markdown",
+        route_after_save,
+        {
+            "publish_notion": "publish_notion",
+            "end": END,
+        },
+    )
+    builder.add_edge("publish_notion", END)
 
     return builder.compile()
 

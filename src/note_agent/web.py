@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import streamlit as st
 
 from note_agent import __version__
@@ -14,6 +16,8 @@ from note_agent.domain.api import NoteAgentRequest
 from note_agent.agent.runner import stream_note_agent_events
 
 st.set_page_config(page_title="Note Agent", page_icon="📝", layout="wide")
+
+_MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,6 +33,36 @@ def _parse_urls(raw: str) -> list[str]:
     for line in (raw or "").splitlines():
         parts.extend(s.strip() for s in line.split(","))
     return [s for s in parts if s]
+
+
+def _render_mermaid(code: str, height: int = 420) -> None:
+    import streamlit.components.v1 as components
+
+    safe = code.replace("`", r"\`")
+    html = f"""
+    <div class="mermaid">{safe}</div>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({{ startOnLoad: true, theme: "default", securityLevel: "loose" }});
+    </script>
+    """
+    components.html(html, height=height, scrolling=True)
+
+
+def _render_note_with_mermaid(container, note: str) -> None:
+    """Render a markdown note, replacing fenced ```mermaid blocks with live diagrams."""
+    if not note:
+        container.markdown("*Generating…*")
+        return
+
+    parts = _MERMAID_RE.split(note)
+    with container.container():
+        for idx, part in enumerate(parts):
+            if idx % 2 == 0:
+                if part.strip():
+                    st.markdown(part)
+            else:
+                _render_mermaid(part.strip())
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +94,7 @@ def _build_sidebar() -> tuple:
             help="0 = single-pass, no verify loop.",
         )
         assets = st.checkbox("Generate assets", value=False)
+        notion = st.checkbox("Publish to Notion", value=False)
 
         st.divider()
         with st.expander("About", expanded=False):
@@ -68,7 +103,7 @@ def _build_sidebar() -> tuple:
                 "multimodal asset generation. Inputs: text, `.txt`/`.md` "
                 "files, or webpage URLs."
             )
-    return llm, search, int(iters), assets
+    return llm, search, int(iters), assets, notion
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +159,7 @@ def _run_agent(
     search: str,
     max_iters: int,
     enable_assets: bool,
+    enable_notion: bool,
 ) -> None:
     file_texts: list[tuple[str, str]] = []
     webpage_texts: list[tuple[str, str]] = []
@@ -149,6 +185,7 @@ def _run_agent(
         llm_provider=llm,
         search_api=search,
         enable_assets=enable_assets,
+        enable_notion=enable_notion,
     )
 
     # Placeholders
@@ -203,9 +240,11 @@ def _run_agent(
                 step_ph.markdown(step_output)
 
             with result_tabs[1]:
-                note_ph.markdown(
-                    st.session_state.get("last_note", "*Generating…*")
-                )
+                last_note = st.session_state.get("last_note", "")
+                if last_note and _MERMAID_RE.search(last_note):
+                    _render_note_with_mermaid(note_ph, last_note)
+                else:
+                    note_ph.markdown(last_note or "*Generating…*")
 
             with result_tabs[2]:
                 if sources:
@@ -223,6 +262,9 @@ def _run_agent(
                 if etype == "done":
                     state = event["state"]
                     lines.append(f"**Saved:** `{state.get('saved_path', '—')}`")
+                    nurl = state.get("notion_url") or ""
+                    if nurl:
+                        lines.append(f"**Notion:** {nurl}")
                     ipaths = state.get("intermediate_paths") or []
                     apaths = state.get("asset_paths") or []
                     if ipaths:
@@ -264,14 +306,14 @@ def _run_agent(
 
 
 def main() -> None:
-    llm, search, max_iters, enable_assets = _build_sidebar()
+    llm, search, max_iters, enable_assets, enable_notion = _build_sidebar()
     manual_text, uploaded_files, raw_urls, run = _build_input_section()
 
     if run:
         st.session_state["_active_run"] = True
         st.session_state["_run_params"] = (
             manual_text, uploaded_files, raw_urls,
-            llm, search, max_iters, enable_assets,
+            llm, search, max_iters, enable_assets, enable_notion,
         )
 
     if st.session_state.get("_active_run"):

@@ -12,6 +12,7 @@ AssetType = Literal["formula", "code", "mermaid", "chart"]
 class AssetPlanItem(BaseModel):
     asset_type: AssetType
     purpose: str = ""
+    necessity_reason: str = ""
     insert_after_heading: str = ""
     priority: Literal["low", "medium", "high"] = "medium"
 

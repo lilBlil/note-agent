@@ -37,12 +37,51 @@ def parse_asset_plan(text: str) -> list[AssetPlanItem]:
         return []
 
 
+def filter_asset_plan(
+    plan: list[AssetPlanItem], current_note: str
+) -> list[AssetPlanItem]:
+    """Remove assets that are redundant with existing note content or low-value."""
+    note_lower = current_note.lower()
+    has_code = "```" in current_note
+    has_formula = "$$" in current_note or "\\(" in current_note
+    has_mermaid = "```mermaid" in note_lower
+
+    filtered: list[AssetPlanItem] = []
+    for item in plan:
+        if item.priority == "low":
+            continue
+        if item.asset_type == "code" and has_code and not item.necessity_reason:
+            continue
+        if item.asset_type == "formula" and has_formula and not item.necessity_reason:
+            continue
+        if item.asset_type == "mermaid" and has_mermaid and not item.necessity_reason:
+            continue
+        if item.asset_type == "chart" and not item.necessity_reason:
+            continue
+        filtered.append(item)
+    return filtered
+
+
 def parse_generated_assets(text: str) -> GeneratedAssets:
     try:
         data = extract_json_array_or_object(text)
         return GeneratedAssets(**data) if isinstance(data, dict) else GeneratedAssets()
     except Exception:
         return GeneratedAssets()
+
+
+def validate_generated_assets(assets: GeneratedAssets) -> GeneratedAssets:
+    """Remove empty or low-quality generated assets."""
+    formulas = [f for f in assets.formulas if f.latex.strip()]
+    code_blocks = [c for c in assets.code_blocks if c.code.strip()]
+    diagrams = [d for d in assets.diagrams if d.mermaid.strip() and d.mermaid.count("-->") + d.mermaid.count("->") + d.mermaid.count("--") >= 1]
+    charts = [ch for ch in assets.charts if ch.series and any(s.x and s.y and len(s.x) == len(s.y) for s in ch.series)]
+    return GeneratedAssets(
+        formulas=formulas,
+        code_blocks=code_blocks,
+        diagrams=diagrams,
+        charts=charts,
+    )
 
 
 def _safe_name(value: str, default: str) -> str:

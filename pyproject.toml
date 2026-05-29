@@ -26,6 +26,9 @@ dependencies = [
 assets = [
   "matplotlib>=3.8.0",
 ]
+notion = [
+  "notion-client>=2.2.0",
+]
 
 [project.scripts]
 note-agent = "note_agent.cli:main"

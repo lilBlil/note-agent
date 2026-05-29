@@ -13,6 +13,7 @@ class NoteAgentRequest(BaseModel):
     llm_provider: LLMProvider = "deepseek"
     search_api: SearchAPI = "duckduckgo"
     enable_assets: bool = False
+    enable_notion: bool = False
 
 
 class NoteAgentResponse(BaseModel):
@@ -20,6 +21,7 @@ class NoteAgentResponse(BaseModel):
     note_type: str
     final_note: str
     saved_path: str
+    notion_url: str = ""
     sources: list[str]
     used_reference_queries: list[str] = Field(default_factory=list)
     iterations: int
