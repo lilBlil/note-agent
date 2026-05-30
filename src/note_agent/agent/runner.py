@@ -190,6 +190,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
                 {
                     "type": "error",
                     "message": str(e),
+                    "fatal": True,
                     "run_id": run_id,
                     "run_log_dir": str(get_run_dir(run_id).resolve()),
                 }

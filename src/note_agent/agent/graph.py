@@ -447,7 +447,7 @@ def publish_notion_node(state: NoteResearchState):
 
         return {"notion_url": notion_url}
     except Exception as e:
-        emit_event("error", text=f"Notion 发布失败：{e}")
+        emit_event("error", message=f"Notion 发布失败：{e}", fatal=False)
         return {"notion_url": ""}
 
 

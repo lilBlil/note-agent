@@ -228,8 +228,10 @@ def _run_agent(
                 sources = event["state"].get("sources", [])
 
             elif etype == "error":
-                st.error(f"Run failed: {event.get('message')}")
-                break
+                msg = event.get("message") or event.get("text", "")
+                st.error(f"Error: {msg}")
+                if event.get("fatal", True):
+                    break
 
             # Render
             with result_tabs[0]:
