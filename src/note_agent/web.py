@@ -95,7 +95,6 @@ def _build_sidebar() -> tuple:
         )
         assets = st.checkbox("Generate assets", value=False)
         notion = st.checkbox("Publish to Notion", value=False)
-
         st.divider()
         with st.expander("About", expanded=False):
             st.markdown(

@@ -30,6 +30,7 @@ notion = [
   "notion-client>=2.2.0",
 ]
 
+
 [project.scripts]
 note-agent = "note_agent.cli:main"
 note-agent-ui = "note_agent.web:main"

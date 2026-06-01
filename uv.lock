@@ -1045,6 +1045,7 @@ requires-dist = [
     { name = "streamlit", specifier = ">=1.35.0" },
 ]
 provides-extras = ["assets", "notion"]
+provides-extras = ["assets", "notion"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=9.0.3" }]

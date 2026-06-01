@@ -117,6 +117,17 @@ NOTION_PARENT_PAGE_ID=your_notion_parent_page_id
 3. 在集成页面点击 **Add connections**，授权该父页面
 4. 在 Streamlit 界面侧边栏勾选 **"Publish to Notion"** 即可
 
+#### Markdown → Notion 支持语法
+
+发布时自动将 Markdown 转换为 Notion blocks，支持数学公式的全部 4 种 LaTeX 分隔符：
+
+| 写法 | 含义 |
+|------|------|
+| `$...$` | 行内公式 |
+| `$$...$$` | 独立公式 |
+| `\(...\)` | 行内公式（标准 LaTeX） |
+| `\[...\]` | 独立公式（标准 LaTeX） |
+
 ## 运行
 
 命令行：

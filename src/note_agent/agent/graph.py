@@ -34,6 +34,7 @@ from note_agent.retrieval.retriever import (
 from note_agent.domain.models import NoteResearchState, ReferenceQuery
 from note_agent.io.storage import append_event, save_intermediate_note
 from note_agent.notion import publish_note
+
 from note_agent.utils import extract_json_object, to_plain_data
 
 
@@ -263,7 +264,7 @@ def refine_note(state: NoteResearchState):
         state["run_id"],
         f"iteration_{next_iteration}_refined",
         new_note,
-    )
+    )  
 
     emit_event("info", text=f"已保存第 {next_iteration} 轮中间笔记：{intermediate_path}")
 
@@ -449,6 +450,7 @@ def publish_notion_node(state: NoteResearchState):
     except Exception as e:
         emit_event("error", message=f"Notion 发布失败：{e}", fatal=False)
         return {"notion_url": ""}
+
 
 
 def route_after_save(state: NoteResearchState) -> str:

@@ -15,6 +15,8 @@ _CODE_FENCE_RE = re.compile(r"^```(\w*)$")
 _BULLET_RE = re.compile(r"^[-*]\s+(.+)$")
 _NUMBERED_RE = re.compile(r"^\d+\.\s+(.+)$")
 _FORMULA_BLOCK_RE = re.compile(r"^\$\$$")
+_LATEX_BLOCK_START_RE = re.compile(r"^\\\[$")
+_LATEX_BLOCK_END_RE = re.compile(r"^\\\]$")
 
 # Inline patterns — tried in order at each position
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
@@ -26,6 +28,8 @@ _ITALIC_UNDER_RE = re.compile(r"_(?!\s)(.+?)(?<!\s)_")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 _INLINE_DISPLAY_MATH_RE = re.compile(r"\$\$(.+?)\$\$")
 _INLINE_MATH_RE = re.compile(r"\$(.+?)\$")
+_INLINE_LATEX_DISPLAY_RE = re.compile(r"\\\[(.+?)\\\]")
+_INLINE_LATEX_MATH_RE = re.compile(r"\\\((.+?)\\\)")
 
 _TABLE_ROW_RE = re.compile(r"^\|(.+)\|\s*$")
 _TABLE_SEP_RE = re.compile(r"^\|([\s\-:]+\|)+\s*$")
@@ -128,16 +132,30 @@ def _parse_inline_rich_text(text: str) -> list[dict[str, Any]]:
             i = m.end()
             continue
 
-        # 9. Inline math $...$
+        # 9. Inline display math \[...\]
+        m = _INLINE_LATEX_DISPLAY_RE.match(text, pos=i)
+        if m:
+            result.append({"type": "equation", "equation": {"expression": m.group(1)}})
+            i = m.end()
+            continue
+
+        # 10. Inline math $...$
         m = _INLINE_MATH_RE.match(text, pos=i)
         if m:
             result.append({"type": "equation", "equation": {"expression": m.group(1)}})
             i = m.end()
             continue
 
-        # 10. No pattern matched — accumulate plain text until next special char
+        # 11. Inline math \(...\)
+        m = _INLINE_LATEX_MATH_RE.match(text, pos=i)
+        if m:
+            result.append({"type": "equation", "equation": {"expression": m.group(1)}})
+            i = m.end()
+            continue
+
+        # 12. No pattern matched — accumulate plain text until next special char
         nxt = len(text)
-        for ch in ("`", "*", "_", "~", "[", "$"):
+        for ch in ("`", "*", "_", "~", "[", "$", "\\"):
             idx = text.find(ch, i + 1)  # search after current char
             if idx != -1 and idx < nxt:
                 nxt = idx
@@ -289,6 +307,17 @@ def markdown_to_notion_blocks(markdown: str) -> list[dict[str, Any]]:
             latex_lines: list[str] = []
             i += 1
             while i < len(lines) and not _FORMULA_BLOCK_RE.match(lines[i].strip()):
+                latex_lines.append(lines[i])
+                i += 1
+            blocks.append(_equation_block("\n".join(latex_lines).strip()))
+            i += 1
+            continue
+
+        # Formula block \[...\]
+        if _LATEX_BLOCK_START_RE.match(line.strip()):
+            latex_lines: list[str] = []
+            i += 1
+            while i < len(lines) and not _LATEX_BLOCK_END_RE.match(lines[i].strip()):
                 latex_lines.append(lines[i])
                 i += 1
             blocks.append(_equation_block("\n".join(latex_lines).strip()))
