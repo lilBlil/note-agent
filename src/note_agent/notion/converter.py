@@ -37,6 +37,9 @@ _HR_RE = re.compile(r"^\s{0,3}(-{3,}|\*{3,}|_{3,})\s*$")
 
 _ANNOTATION_KEYS = frozenset({"bold", "italic", "strikethrough", "code"})
 
+# Detect LaTeX-like content inside backticks (e.g. `\hat{f}` → equation)
+_LATEX_LIKE_RE = re.compile(r"\\[a-zA-Z]")
+
 
 def _text_segment(content: str, **annotations: bool) -> dict[str, Any]:
     seg: dict[str, Any] = {"type": "text", "text": {"content": content}}
@@ -62,10 +65,14 @@ def _parse_inline_rich_text(text: str) -> list[dict[str, Any]]:
     i = 0
 
     while i < len(text):
-        # 1. Inline code `...`
+        # 1. Inline code `...` — treat as LaTeX if content looks like a formula
         m = _INLINE_CODE_RE.match(text, pos=i)
         if m:
-            result.append(_text_segment(m.group(1), code=True))
+            content = m.group(1)
+            if _LATEX_LIKE_RE.search(content):
+                result.append({"type": "equation", "equation": {"expression": content}})
+            else:
+                result.append(_text_segment(content, code=True))
             i = m.end()
             continue
 

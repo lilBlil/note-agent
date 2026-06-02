@@ -118,7 +118,7 @@ def generate_reference_queries_prompt(current_note: str, used_queries: list[str]
 
 def verify_note_prompt(raw_input: str, current_note: str, references: str) -> str:
     return f"""
-你是一个事实核验 Agent。请逐条检查笔记中的事实性声明。
+你是一个事实核验 Agent。请逐条检查笔记中的事实性声明。无论是否有参考信息检索结果，都必须完成以下所有检查。
 
 用户原始输入：
 {raw_input}
@@ -129,14 +129,24 @@ def verify_note_prompt(raw_input: str, current_note: str, references: str) -> st
 参考信息检索结果：
 {references}
 
-请输出结构化核验报告，包含以下三部分：
+请输出结构化核验报告，包含以下五部分：
+
+### 事实错误
+列出笔记中明显违背常识、公认知识或用户原始输入的事实性错误。格式：
+- 笔记原文摘要 → 错误说明
+（此为纯知识核验，不依赖参考信息）
+
+### 自相矛盾
+检查笔记内部是否有前后不一致或自相矛盾的地方。格式：
+- 位置A 的说法 → 位置B 的说法 → 矛盾说明
 
 ### 事实冲突
-列出笔记中与参考信息明确矛盾的内容。格式：
+列出笔记中与参考信息检索结果明确矛盾的内容。格式：
 - 笔记原文摘要 → 参考信息说法 [来源编号]
+（如果没有参考信息，此部分写”无参考信息可供比对”）
 
 ### 无源声明
-列出笔记中无法被用户输入或参考信息支撑的具体事实（通用领域知识和教科书级常识不算）。
+列出笔记中无法被用户原始输入支撑的具体事实断言（通用领域知识和教科书级常识不算）。
 
 ### 遗漏信息
 列出参考信息中满足以下全部条件的内容：
@@ -144,6 +154,7 @@ def verify_note_prompt(raw_input: str, current_note: str, references: str) -> st
 2. 对理解该主题不可或缺
 3. 当前笔记完全未涉及
 格式：- 遗漏内容摘要 [来源编号]
+（如果没有参考信息，此部分写”无参考信息可供比对”）
 
 注意：参考信息中的延伸话题、相关但非核心的内容不算遗漏。宁可少列，不要把所有检索结果都当作遗漏。
 
@@ -173,9 +184,11 @@ def refine_note_prompt(
 {verification_report}
 
 修正规则（按优先级严格执行）：
-1. 修正"事实冲突"中列出的所有矛盾，以参考信息为准
-2. 删除或弱化"无源声明"中列出的无法验证的具体事实
-3. 将"遗漏信息"中的重要内容整合到已有章节或新增子章节，句尾标注来源 [R1]
+1. 修正"事实错误"中列出的所有常识性和知识性错误
+2. 消除"自相矛盾"中列出的所有前后不一致，选择正确的版本保留
+3. 修正"事实冲突"中列出的所有矛盾，以参考信息为准
+4. 删除或弱化"无源声明"中列出的无法验证的具体事实（改为谨慎措辞如'研究表明''一般认为'等，或直接删除）
+5. 将"遗漏信息"中的重要内容整合到已有章节或新增子章节，句尾标注来源 [R1]
 
 保护性约束（不可违反）：
 - 禁止删除原有章节或大段已有内容，只能增补和局部修正
@@ -212,57 +225,42 @@ def finalize_note_prompt(current_note: str, sources: list[str]) -> str:
 
 def plan_assets_prompt(current_note: str, note_type: str) -> str:
     return f"""
-你是一个研究笔记多模态规划 Agent。你的职责是判断笔记中哪些地方"纯文字无法有效表达"，需要用公式、代码、图表或流程图来辅助理解。
+请扫描以下笔记，只在文字确实不够用的时候才规划资产（公式/代码/图/图表），不要为了"丰富"而添加装饰性内容。
 
-笔记类型：
-{note_type}
+笔记类型：{note_type}
 
 当前笔记：
 {current_note}
 
-## 决策原则（严格遵守）
+## 何时需要用资产（四类，宁缺毋滥）
 
-只有满足以下条件之一时，才应规划资产：
-1. **文字描述了数学关系** → 用 formula 精确表达，避免读者自行脑补符号
-2. **文字描述了具体算法步骤或 API 用法** → 用 code 给出最小可运行示例，让读者可以直接复现
-3. **文字描述了多步骤流程、状态转换或组件关系** → 用 mermaid 可视化，降低认知负担
-4. **文字引用了可量化的对比数据** → 用 chart 直观呈现趋势或差异
+| 场景 | 类型 | 要求 |
+|------|------|------|
+| 文字描述数学关系但未给出 LaTeX | formula | 精确表达，避免读者脑补 |
+| 描述算法/API 但无代码示例 | code | 最小可运行片段，5-20 行 |
+| 多步骤流程/状态转换/组件关系 | mermaid | 3-10 节点，降低认知负担 |
+| 引用了可量化对比数据 | chart | 只用笔记中已有的数据，不伪造 |
 
-**不要规划资产的情况：**
-- 笔记中已经包含了对应的代码块、公式或 Mermaid 图
-- 概念本身用文字已经足够清晰，图表只是"锦上添花"
-- 没有具体数据支撑的 chart（不要伪造数据来画图）
-- 纯粹为了让笔记"看起来丰富"而添加的装饰性内容
+## 不需要资产的情况
+- 笔记中已有对应的代码块、公式或 mermaid 图 → 不要重复
+- 纯文字已经足够清晰 → 图表只是锦上添花
+- 没有具体数据 → 不创建 chart
+- 笔记本身没有触发场景 → 输出空数组
 
-## 可用资产类型
-- formula：数学公式（笔记中有明确数学关系但未用 LaTeX 表达时）
-- code：代码示例（笔记中描述了算法/用法但未给出代码时）
-- mermaid：流程图/架构图（笔记中描述了多步流程或组件关系时）
-- chart：数据图表（笔记中有明确的可量化对比数据时）
-
-## 输出要求
-1. 每个资产必须有明确的 necessity_reason 说明"为什么纯文字不够"
-2. 总数最多 4 个，宁缺毋滥
-3. 如果笔记内容用纯文字已经足够清晰，输出空数组 []
-4. insert_after_heading 必须对应笔记中已有的标题文字
-5. 输出 JSON 数组，不要输出解释
+## 要求
+- 每个资产有 necessity_reason，说清"为什么纯文字不够"
+- insert_after_heading 必须是笔记中已有的标题
+- 最多 4 个，不多不少；不需要就输出 []
+- 严格 JSON 数组，不要解释
 
 输出格式：
-[
-  {{
-    "asset_type": "formula",
-    "purpose": "精确表达 Bellman 方程，替代文字中的模糊描述",
-    "necessity_reason": "笔记中用自然语言描述了价值函数递推关系，但缺少精确数学表达",
-    "insert_after_heading": "核心原理",
-    "priority": "high"
-  }}
-]
+[{{"asset_type": "formula", "purpose": "...", "necessity_reason": "...", "insert_after_heading": "...", "priority": "high"}}]
 """
 
 
 def generate_assets_prompt(current_note: str, asset_plan: str) -> str:
     return f"""
-你是一个多模态笔记资产生成 Agent。你的目标是生成能让读者更快、更准确理解笔记内容的资产。
+根据规划生成资产，每个资产必须比文字提供更多信息（精确性/可视化/可运行性），禁止把文字内容换个形式复述。
 
 当前笔记：
 {current_note}
@@ -270,82 +268,21 @@ def generate_assets_prompt(current_note: str, asset_plan: str) -> str:
 资产规划：
 {asset_plan}
 
-## 生成原则
+## 各类型标准
 
-1. **互补而非重复**：资产必须提供文字无法传达的信息维度（精确性、可视化、可运行性），不要把文字内容换个形式再说一遍
-2. **自包含**：每个资产独立可理解，不需要反复对照上下文
-3. **最小化**：用最少的元素表达核心信息，删掉一切不影响理解的部分
+**formula**：笔记中文字关系的精确 LaTeX。variables 只列非显而易见的变量，explanation 一句话说明含义。
 
-## 各类型质量标准
+**code**：最小可运行示例 5-20 行，直接说明笔记中的算法或用法。不要完整项目、不要 import 之外的样板。
 
-**formula**：
-- 必须是笔记中文字描述的数学关系的精确 LaTeX 表达
-- variables 只列出非显而易见的变量
-- explanation 一句话说明公式的物理/逻辑含义
+**mermaid**：3-10 节点，简短中文标签。选最合适的图类型（flowchart/sequenceDiagram/stateDiagram/classDiagram）。
 
-**code**：
-- 必须是最小可读示例（通常 5-20 行），能直接说明笔记中描述的用法或算法
-- 不要写完整项目代码、不要写 import 之外的样板代码
-- 必须能独立运行或作为片段直接使用
+**chart**：只用笔记中已有的数据，不伪造。无数据时不生成。
 
-**mermaid**：
-- 节点数控制在 3-10 个，只保留关键步骤/组件
-- 用简短中文标签，不要长句子作为节点文字
-- 选择最合适的图类型（flowchart/sequenceDiagram/stateDiagram/classDiagram）
+## 输出
 
-**chart**：
-- 只使用笔记中已有的数据或公认的参考数据
-- 绝对不要伪造实验结果或统计数据
-- 如果没有具体数据，不要生成 chart
+严格 JSON，无解释。规划和笔记内容都作为上下文参考，不需要在输出中复述。某类资产在规划中没有则对应字段为 []。
 
-## 输出格式
-
-输出严格 JSON 对象，不要输出解释：
-{{
-  "formulas": [
-    {{
-      "formula_id": "formula_001",
-      "title": "公式标题",
-      "latex": "LaTeX 公式",
-      "explanation": "一句话说明",
-      "variables": {{"x": "变量含义"}},
-      "insert_after_heading": "对应标题"
-    }}
-  ],
-  "code_blocks": [
-    {{
-      "code_id": "code_001",
-      "title": "代码标题",
-      "language": "python",
-      "code": "代码内容",
-      "purpose": "一句话说明这段代码演示什么",
-      "insert_after_heading": "对应标题"
-    }}
-  ],
-  "diagrams": [
-    {{
-      "diagram_id": "diagram_001",
-      "title": "图标题",
-      "mermaid": "flowchart TD\\nA-->B",
-      "caption": "一句话说明",
-      "insert_after_heading": "对应标题"
-    }}
-  ],
-  "charts": [
-    {{
-      "chart_id": "chart_001",
-      "title": "图表标题",
-      "chart_type": "line",
-      "x_label": "横轴",
-      "y_label": "纵轴",
-      "series": [{{"label": "系列", "x": [1, 2, 3], "y": [0.1, 0.2, 0.3]}}],
-      "caption": "数据来源说明",
-      "insert_after_heading": "对应标题"
-    }}
-  ]
-}}
-
-如果某类资产在规划中没有，对应字段输出空数组。
+{{"formulas":[{{"formula_id":"f1","title":"...","latex":"...","explanation":"...","variables":{{"x":"含义"}},"insert_after_heading":"..."}}],"code_blocks":[{{"code_id":"c1","title":"...","language":"python","code":"...","purpose":"...","insert_after_heading":"..."}}],"diagrams":[{{"diagram_id":"d1","title":"...","mermaid":"flowchart TD\\nA-->B","caption":"...","insert_after_heading":"..."}}],"charts":[{{"chart_id":"ch1","title":"...","chart_type":"line","x_label":"...","y_label":"...","series":[{{"label":"...","x":[1,2],"y":[3,4]}}],"caption":"...","insert_after_heading":"..."}}]}}
 """
 
 

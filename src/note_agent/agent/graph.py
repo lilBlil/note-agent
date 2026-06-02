@@ -470,6 +470,7 @@ def build_graph():
     builder.add_node("verify_note", verify_note)
     builder.add_node("refine_note", refine_note)
     builder.add_node("finalize_note", finalize_note)
+    
     builder.add_node("plan_note_assets", plan_note_assets)
     builder.add_node("generate_note_assets", generate_note_assets)
     builder.add_node("assemble_assets_into_note", assemble_assets_into_note)
@@ -479,7 +480,6 @@ def build_graph():
     builder.add_edge(START, "infer_note_type")
     builder.add_edge("infer_note_type", "generate_dynamic_outline")
     builder.add_edge("generate_dynamic_outline", "generate_initial_note")
-
     builder.add_conditional_edges(
         "generate_initial_note",
         route_after_initial_note,
@@ -488,10 +488,9 @@ def build_graph():
             "finalize": "finalize_note",
         },
     )
-
+    builder.add_edge("verify_note", "refine_note")
     builder.add_edge("generate_reference_queries", "retrieve_references")
     builder.add_edge("retrieve_references", "verify_note")
-    builder.add_edge("verify_note", "refine_note")
 
     builder.add_conditional_edges(
         "refine_note",

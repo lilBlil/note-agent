@@ -48,13 +48,13 @@ def get_model(provider: str = "deepseek"):
         return ChatDeepSeek(
             model=str(cfg["model"]),
             api_key=api_key,
-            temperature=0.3,
+            temperature=0,
             model_kwargs=model_kwargs,
         )
     return ChatOpenAI(
         model=str(cfg["model"]),
         api_key=api_key,
         base_url=str(cfg["base_url"] or ""),
-        temperature=0.3,
+        temperature=0,
         model_kwargs=model_kwargs,
     )
