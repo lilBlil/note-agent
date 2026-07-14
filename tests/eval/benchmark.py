@@ -67,15 +67,30 @@ def _run_pipeline_to_final(case: dict, max_iterations: int, provider: str) -> di
     from note_agent.io.events import set_event_handler, reset_event_handler
     _tok = set_event_handler(lambda ev: None)
 
+    # Capture intermediate notes so we can inspect what each refine round did
+    # (the pipeline normally writes these to disk; here we keep them in memory).
+    captured: list[tuple[str, str]] = []
+
+    def _capture(run_id, label, note):
+        captured.append((label, note))
+        return f"/tmp/{label}.md"
+
     try:
         with patch("note_agent.agent.graph.save_markdown", lambda t, c: "/tmp/x.md"), \
-             patch("note_agent.agent.graph.save_intermediate_note", lambda *a, **k: "/tmp/i.md"), \
+             patch("note_agent.agent.graph.save_intermediate_note", _capture), \
              patch("note_agent.agent.graph.append_event", lambda *a, **k: None):
             result = get_graph().invoke(state)
     finally:
         reset_event_handler(_tok)
 
     usage = summarize_usage()
+    # Persist captured intermediate notes for per-round inspection.
+    if captured:
+        dbg = RESULTS_DIR / "intermediates" / f"{case['id']}_iter{max_iterations}"
+        dbg.mkdir(parents=True, exist_ok=True)
+        for i, (label, note) in enumerate(captured):
+            (dbg / f"{i:02d}_{label}.md").write_text(note, encoding="utf-8")
+
     return {
         "final_note": result.get("final_note", ""),
         "note_type": result.get("note_type", ""),
