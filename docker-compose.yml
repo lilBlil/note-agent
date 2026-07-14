@@ -1,0 +1,13 @@
+services:
+  note-agent:
+    build: .
+    image: note-agent:latest
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - ./notes:/app/notes
+      - ./runs:/app/runs
+      - ./.cache:/app/.cache
+    restart: unless-stopped
