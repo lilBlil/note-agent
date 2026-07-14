@@ -1,0 +1,62 @@
+[
+  {
+    "study": "loop",
+    "n_cases": 1,
+    "iters": [
+      0,
+      1,
+      2
+    ],
+    "aggregate": {
+      "0": {
+        "overall": 4.3,
+        "factual_accuracy": 3.0,
+        "depth": 4.0,
+        "avg_hallucinations": 1.0,
+        "avg_tokens": 21643
+      },
+      "1": {
+        "overall": 4.0,
+        "factual_accuracy": 1.0,
+        "depth": 5.0,
+        "avg_hallucinations": 3.0,
+        "avg_tokens": 40063
+      },
+      "2": {
+        "overall": 3.25,
+        "factual_accuracy": 1.0,
+        "depth": 4.0,
+        "avg_hallucinations": 5.0,
+        "avg_tokens": 64441
+      }
+    },
+    "per_case": [
+      {
+        "id": "case_01_quantum",
+        "by_iter": {
+          "0": {
+            "overall": 4.3,
+            "factual_accuracy": 3,
+            "depth": 4,
+            "hallucinations": 1,
+            "total_tokens": 21643
+          },
+          "1": {
+            "overall": 4.0,
+            "factual_accuracy": 1,
+            "depth": 5,
+            "hallucinations": 3,
+            "total_tokens": 40063
+          },
+          "2": {
+            "overall": 3.25,
+            "factual_accuracy": 1,
+            "depth": 4,
+            "hallucinations": 5,
+            "total_tokens": 64441
+          }
+        }
+      }
+    ]
+  }
+]
