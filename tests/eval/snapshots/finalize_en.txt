@@ -1,0 +1,25 @@
+
+请将笔记整理为最终发布版本。
+
+当前笔记：
+# Transformer Architecture
+
+## Overview
+The Transformer, introduced in "Attention Is All You Need" (Vaswani et al., 2017),
+revolutionized sequence modeling by replacing recurrence with attention.
+
+## Self-Attention
+Self-attention computes weighted representations of each position...
+
+
+参考来源链接：
+- https://arxiv.org/abs/1706.03762
+
+整理任务：
+1. 合并重复或高度相似的段落
+2. 确保章节间逻辑连贯（前文引入的概念后文不应重新解释）
+3. 删除 [待验证] 标记：已有来源支撑的去掉标记，仍无来源的删除该句
+4. 统一术语用法（同一概念全文使用同一名称）
+5. 如果有参考来源，末尾添加 ## Sources 章节，使用给定链接，不要编造
+
+不要添加新信息。第一行 # 标题，不要 ```markdown 包裹，直接输出最终笔记。

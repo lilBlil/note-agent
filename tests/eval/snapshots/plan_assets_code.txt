@@ -1,0 +1,48 @@
+
+请扫描以下笔记，只在文字确实不够用的时候才规划资产（公式/代码/图/图表），不要为了"丰富"而添加装饰性内容。
+
+笔记类型：学习笔记
+
+当前笔记：
+# Python装饰器详解
+
+## 基础装饰器
+装饰器本质上是一个接受函数并返回函数的可调用对象...
+
+## 带参数装饰器
+当装饰器自身需要参数时，需要再嵌套一层...
+
+```python
+def repeat(n):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            for _ in range(n):
+                func(*args, **kwargs)
+        return wrapper
+    return decorator
+```
+
+
+## 何时需要用资产（四类，宁缺毋滥）
+
+| 场景 | 类型 | 要求 |
+|------|------|------|
+| 文字描述数学关系但未给出 LaTeX | formula | 精确表达，避免读者脑补 |
+| 描述算法/API 但无代码示例 | code | 最小可运行片段，5-20 行 |
+| 多步骤流程/状态转换/组件关系 | mermaid | 3-10 节点，降低认知负担 |
+| 引用了可量化对比数据 | chart | 只用笔记中已有的数据，不伪造 |
+
+## 不需要资产的情况
+- 笔记中已有对应的代码块、公式或 mermaid 图 → 不要重复
+- 纯文字已经足够清晰 → 图表只是锦上添花
+- 没有具体数据 → 不创建 chart
+- 笔记本身没有触发场景 → 输出空数组
+
+## 要求
+- 每个资产有 necessity_reason，说清"为什么纯文字不够"
+- insert_after_heading 必须是笔记中已有的标题
+- 最多 4 个，不多不少；不需要就输出 []
+- 严格 JSON 数组，不要解释
+
+输出格式：
+[{"asset_type": "formula", "purpose": "...", "necessity_reason": "...", "insert_after_heading": "...", "priority": "high"}]

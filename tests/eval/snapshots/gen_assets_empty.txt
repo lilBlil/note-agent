@@ -1,0 +1,41 @@
+
+根据规划生成资产，每个资产必须比文字提供更多信息（精确性/可视化/可运行性），禁止把文字内容换个形式复述。
+
+当前笔记：
+# CAP定理详解
+
+## 概述
+CAP定理是分布式系统设计的基石理论，由Eric Brewer在2000年提出，
+后被Gilbert和Lynch形式化证明。
+
+## C —— 一致性
+一致性（Consistency）要求所有节点在同一时刻看到相同的数据...
+
+## A —— 可用性
+可用性（Availability）要求每个非故障节点都能返回响应...
+
+## P —— 分区容错性
+分区容错性（Partition Tolerance）要求系统在网络分区时仍能运行...
+
+## 三者权衡
+由于网络分区不可避免，系统必须在C和A之间做选择...
+
+
+资产规划：
+[]
+
+## 各类型标准
+
+**formula**：笔记中文字关系的精确 LaTeX。variables 只列非显而易见的变量，explanation 一句话说明含义。
+
+**code**：最小可运行示例 5-20 行，直接说明笔记中的算法或用法。不要完整项目、不要 import 之外的样板。
+
+**mermaid**：3-10 节点，简短中文标签。选最合适的图类型（flowchart/sequenceDiagram/stateDiagram/classDiagram）。
+
+**chart**：只用笔记中已有的数据，不伪造。无数据时不生成。
+
+## 输出
+
+严格 JSON，无解释。规划和笔记内容都作为上下文参考，不需要在输出中复述。某类资产在规划中没有则对应字段为 []。
+
+{"formulas":[{"formula_id":"f1","title":"...","latex":"...","explanation":"...","variables":{"x":"含义"},"insert_after_heading":"..."}],"code_blocks":[{"code_id":"c1","title":"...","language":"python","code":"...","purpose":"...","insert_after_heading":"..."}],"diagrams":[{"diagram_id":"d1","title":"...","mermaid":"flowchart TD\nA-->B","caption":"...","insert_after_heading":"..."}],"charts":[{"chart_id":"ch1","title":"...","chart_type":"line","x_label":"...","y_label":"...","series":[{"label":"...","x":[1,2],"y":[3,4]}],"caption":"...","insert_after_heading":"..."}]}

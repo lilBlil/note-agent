@@ -1,0 +1,2 @@
+# Temporary diff files generated when snapshot tests fail
+*.new.txt

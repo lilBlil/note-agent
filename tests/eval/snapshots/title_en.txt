@@ -1,0 +1,20 @@
+
+请为下面这篇笔记生成一个简洁、准确的文件名标题。
+
+要求：
+1. 标题要体现笔记内容主题
+2. 不超过 20 个汉字或 8 个英文单词
+3. 不要使用标点符号
+4. 不要包含日期和时间
+5. 只输出标题，不要解释
+
+笔记内容：
+# Transformer Architecture
+
+## Overview
+The Transformer, introduced in "Attention Is All You Need" (Vaswani et al., 2017),
+revolutionized sequence modeling by replacing recurrence with attention.
+
+## Self-Attention
+Self-attention computes weighted representations of each position...
+
