@@ -84,12 +84,21 @@ def _build_sidebar() -> tuple:
             ["duckduckgo", "tavily", "perplexity", "searxng"],
             index=0,
         )
+        if mode_key == "react":
+            iters_label = "Iteration budget (hint)"
+            iters_help = (
+                "ReAct 模式下这是**软预算**：作为建议喂给 Agent，由它自主决定是否"
+                "继续搜索+修正，不强制。0 = 建议单遍生成。"
+            )
+        else:
+            iters_label = "Max iterations"
+            iters_help = "固定流程下这是**硬上限**：达到后强制进入最终化。0 = 单遍，不走核验循环。"
         iters = st.number_input(
-            "Max iterations",
+            iters_label,
             min_value=0,
             value=1,
             step=1,
-            help="0 = single-pass, no verify loop.",
+            help=iters_help,
         )
         assets = st.checkbox("Generate assets", value=False)
         notion = st.checkbox("Publish to Notion", value=False)
