@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, TypedDict
+from typing import Annotated, Any, Literal, Sequence, TypedDict
 from uuid import uuid4
 
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 ReferenceType = Literal["web", "paper", "book", "academic", "other"]
@@ -71,34 +73,46 @@ class RunRecord(BaseModel):
 
 
 class NoteResearchState(TypedDict):
+    """State for ReAct-based note research agent."""
+
+    # Core agent state
+    messages: Annotated[Sequence[BaseMessage], add_messages]
+
+    # Run metadata
     run_id: str
     raw_input: str
     max_iterations: int
     iteration_count: int
 
+    # Configuration
     llm_provider: str
     search_api: str
     enable_assets: bool
     enable_notion: bool
 
+    # Note structure
     note_type: str
     note_outline: list[dict[str, str]]
     current_note: str
 
+    # Reference and search state
     reference_queries: list[dict[str, Any]]
     used_reference_queries: list[str]
     reference_results: list[ReferenceItem]
     evidence_items: list[ReferenceItem]
     sources: list[str]
 
+    # Verification
     verification_report: str
 
+    # Final output
     final_note: str
     note_title: str
     notion_url: str
     saved_path: str
     intermediate_paths: list[str]
 
+    # Assets
     asset_plan: list[dict[str, Any]]
     generated_assets: dict[str, Any]
     asset_paths: list[str]

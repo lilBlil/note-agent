@@ -7,13 +7,6 @@ import re
 import streamlit as st
 
 from note_agent import __version__
-from note_agent.io.input_loader import (
-    build_combined_input,
-    fetch_webpage_text,
-    read_uploaded_text_file,
-)
-from note_agent.domain.api import NoteAgentRequest
-from note_agent.agent.runner import stream_note_agent_events
 
 st.set_page_config(page_title="Note Agent", page_icon="📝", layout="wide")
 
@@ -22,7 +15,6 @@ _MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
 
 def _status_icon(status: str) -> str:
     return {"running": "🔵", "done": "🟢", "pending": "⚪"}.get(status, "⚪")
@@ -64,17 +56,23 @@ def _render_note_with_mermaid(container, note: str) -> None:
             else:
                 _render_mermaid(part.strip())
 
-
 # ---------------------------------------------------------------------------
 # Sidebar
 # ---------------------------------------------------------------------------
-
 
 def _build_sidebar() -> tuple:
     with st.sidebar:
         st.title("Note Agent")
         st.caption(f"v{__version__}")
         st.divider()
+
+        mode = st.radio(
+            "Agent Mode",
+            ["Fixed Workflow", "ReAct Agent"],
+            index=0,
+            help="Fixed: 预定义流程 | ReAct: Agent 自主决策工具调用"
+        )
+        mode_key = "fixed" if mode == "Fixed Workflow" else "react"
 
         llm = st.selectbox(
             "LLM",
@@ -100,15 +98,15 @@ def _build_sidebar() -> tuple:
             st.markdown(
                 "LangGraph research agent with search, verification, and "
                 "multimodal asset generation. Inputs: text, `.txt`/`.md` "
-                "files, or webpage URLs."
+                "files, or webpage URLs.\n\n"
+                "**Fixed Workflow**: 按预定义路径执行\n\n"
+                "**ReAct Agent**: Agent 根据当前状态自主选择工具调用"
             )
-    return llm, search, int(iters), assets, notion
-
+    return llm, search, int(iters), assets, notion, mode_key
 
 # ---------------------------------------------------------------------------
 # Input section
 # ---------------------------------------------------------------------------
-
 
 def _build_input_section() -> tuple:
     st.header("New Research Note", divider="rainbow")
@@ -144,11 +142,9 @@ def _build_input_section() -> tuple:
 
     return text, files, urls, run
 
-
 # ---------------------------------------------------------------------------
 # Run logic
 # ---------------------------------------------------------------------------
-
 
 def _run_agent(
     manual_text: str,
@@ -159,7 +155,20 @@ def _run_agent(
     max_iters: int,
     enable_assets: bool,
     enable_notion: bool,
+    mode: str = "fixed",
 ) -> None:
+    from note_agent.io.input_loader import build_combined_input, fetch_webpage_text, read_uploaded_text_file
+    from note_agent.domain.api import NoteAgentRequest
+    from note_agent.agent.runner_unified import stream_note_agent_events
+
+    # Eagerly compile graph based on mode
+    if mode == "react":
+        from note_agent.agent.graph_react import get_react_graph
+        get_react_graph()
+    else:
+        from note_agent.agent.graph import get_graph
+        get_graph()
+
     file_texts: list[tuple[str, str]] = []
     webpage_texts: list[tuple[str, str]] = []
 
@@ -204,7 +213,7 @@ def _run_agent(
     sources: list[str] = []
 
     try:
-        for event in stream_note_agent_events(request):
+        for event in stream_note_agent_events(request, mode=mode):
             etype = event.get("type")
 
             if etype == "node_start":
@@ -300,21 +309,19 @@ def _run_agent(
     except Exception as exc:
         st.error(f"Unexpected error: {exc}")
 
-
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-
 def main() -> None:
-    llm, search, max_iters, enable_assets, enable_notion = _build_sidebar()
+    llm, search, max_iters, enable_assets, enable_notion, mode = _build_sidebar()
     manual_text, uploaded_files, raw_urls, run = _build_input_section()
 
     if run:
         st.session_state["_active_run"] = True
         st.session_state["_run_params"] = (
             manual_text, uploaded_files, raw_urls,
-            llm, search, max_iters, enable_assets, enable_notion,
+            llm, search, max_iters, enable_assets, enable_notion, mode,
         )
 
     if st.session_state.get("_active_run"):

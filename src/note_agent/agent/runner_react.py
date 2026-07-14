@@ -1,7 +1,11 @@
+"""ReAct-based runner for note agent."""
+
 from queue import Queue, Empty
 from threading import Thread, Event
 
-from note_agent.agent.graph import get_graph
+from langchain_core.messages import HumanMessage
+
+from note_agent.agent.graph_react import get_react_graph
 from note_agent.agent.tracker import reset_usage, summarize_usage
 from note_agent.domain.models import new_run_id
 from note_agent.domain.api import NoteAgentRequest, NoteAgentResponse
@@ -15,8 +19,14 @@ from note_agent.io.storage import (
 from note_agent.io.events import reset_event_handler, set_event_handler
 
 
-def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:
+def build_initial_state_react(request: NoteAgentRequest, run_id: str) -> dict:
+    """Build initial state for ReAct agent."""
     return {
+        "messages": [
+            HumanMessage(
+                content=f"请为以下内容生成高质量研究笔记：\n\n{request.raw_input}"
+            )
+        ],
         "run_id": run_id,
         "raw_input": request.raw_input,
         "max_iterations": request.max_iterations,
@@ -46,25 +56,27 @@ def build_initial_state(request: NoteAgentRequest, run_id: str) -> dict:
 
 
 def build_response(result: dict) -> NoteAgentResponse:
+    """Build response from final state."""
     return NoteAgentResponse(
         run_id=result["run_id"],
-        note_type=result["note_type"],
-        final_note=result["final_note"],
-        saved_path=result["saved_path"],
+        note_type=result.get("note_type", ""),
+        final_note=result.get("final_note", ""),
+        saved_path=result.get("saved_path", ""),
         notion_url=result.get("notion_url", ""),
         sources=result.get("sources", []),
         used_reference_queries=result.get("used_reference_queries", []),
-        iterations=result["iteration_count"],
+        iterations=result.get("iteration_count", 0),
         intermediate_paths=result.get("intermediate_paths", []),
         asset_paths=result.get("asset_paths", []),
         run_log_dir=str(get_run_dir(result["run_id"]).resolve()),
     )
 
 
-def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
+def run_note_agent_react(request: NoteAgentRequest) -> NoteAgentResponse:
+    """Run note agent with ReAct architecture (blocking)."""
     reset_usage()
     run_id = new_run_id()
-    initial_state = build_initial_state(request, run_id)
+    initial_state = build_initial_state_react(request, run_id)
 
     start_run(
         run_id=run_id,
@@ -83,7 +95,7 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
     token = set_event_handler(handler)
 
     try:
-        result = get_graph().invoke(initial_state)
+        result = get_react_graph().invoke(initial_state)
         save_state_snapshot(run_id, result)
         finish_run(
             run_id=run_id,
@@ -99,9 +111,10 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
         reset_event_handler(token)
 
 
-def stream_note_agent(request: NoteAgentRequest):
+def stream_note_agent_react(request: NoteAgentRequest):
+    """Stream note agent with ReAct architecture."""
     run_id = new_run_id()
-    initial_state = build_initial_state(request, run_id)
+    initial_state = build_initial_state_react(request, run_id)
 
     start_run(
         run_id=run_id,
@@ -116,7 +129,7 @@ def stream_note_agent(request: NoteAgentRequest):
     current_state = initial_state.copy()
 
     try:
-        for event in get_graph().stream(initial_state, stream_mode="updates"):
+        for event in get_react_graph().stream(initial_state, stream_mode="updates"):
             for node_name, update in event.items():
                 current_state.update(update)
                 append_event(
@@ -142,9 +155,10 @@ def stream_note_agent(request: NoteAgentRequest):
         raise
 
 
-def stream_note_agent_events(request: NoteAgentRequest):
+def stream_note_agent_events_react(request: NoteAgentRequest):
+    """Stream note agent events with ReAct architecture."""
     run_id = new_run_id()
-    initial_state = build_initial_state(request, run_id)
+    initial_state = build_initial_state_react(request, run_id)
 
     start_run(
         run_id=run_id,
@@ -172,7 +186,7 @@ def stream_note_agent_events(request: NoteAgentRequest):
         current_state = initial_state.copy()
         try:
             # Use stream() so each node boundary is a checkpoint where we can bail out
-            for node_update in get_graph().stream(initial_state, stream_mode="updates"):
+            for node_update in get_react_graph().stream(initial_state, stream_mode="updates"):
                 if stop.is_set():
                     return
                 for node_state in node_update.values():

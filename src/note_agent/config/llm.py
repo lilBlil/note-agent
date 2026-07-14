@@ -5,6 +5,11 @@ from __future__ import annotations
 from note_agent.config.settings import get_model
 
 
+def get_llm_for_provider(provider: str):
+    """Get LLM instance for a given provider (for tool binding)."""
+    return get_model(provider)
+
+
 def _extract_usage(response) -> tuple[int, int]:
     """Return (input_tokens, output_tokens) from a LangChain AIMessage or AIMessageChunk."""
     try:
@@ -32,7 +37,7 @@ def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> st
     )
     from note_agent.agent.tracker import record_usage
 
-    llm = get_model(provider)
+    llm = get_model(provider) if stream else get_model(provider, for_tools=True)
 
     if not stream:
         response = llm.invoke(prompt)

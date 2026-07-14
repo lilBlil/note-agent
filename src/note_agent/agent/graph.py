@@ -1,4 +1,7 @@
 import json
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from langgraph.graph import END, START, StateGraph
 
@@ -18,13 +21,11 @@ from note_agent.agent.prompts import (
     finalize_note_prompt,
     generate_assets_prompt,
     generate_initial_note_prompt,
-    generate_outline_prompt,
     generate_reference_queries_prompt,
     generate_title_prompt,
-    infer_note_type_prompt,
+    infer_type_and_outline_prompt,
     plan_assets_prompt,
-    refine_note_prompt,
-    verify_note_prompt,
+    verify_and_refine_prompt,
 )
 from note_agent.retrieval.retriever import (
     collect_reference_urls,
@@ -49,35 +50,31 @@ def _dedupe_urls(urls: list[str]) -> list[str]:
     return result
 
 
-def infer_note_type(state: NoteResearchState):
-    emit_node_start("infer_note_type", "正在判断笔记类型")
-    note_type = ask_llm(
-        infer_note_type_prompt(state["raw_input"]),
-        provider=state["llm_provider"],
-        stream=True,
-    )
-    return {"note_type": note_type.strip()}
-
-
-def generate_dynamic_outline(state: NoteResearchState):
-    emit_node_start("generate_dynamic_outline", "正在生成动态笔记结构")
+def infer_type_and_outline(state: NoteResearchState):
+    emit_node_start("infer_type_and_outline", "正在判断笔记类型并生成结构")
     text = ask_llm(
-        generate_outline_prompt(state["raw_input"], state["note_type"]),
+        infer_type_and_outline_prompt(state["raw_input"]),
         provider=state["llm_provider"],
         stream=True,
     )
-
+    stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.DOTALL)
     try:
-        outline = json.loads(text)
+        data = json.loads(stripped)
     except Exception:
-        outline = [
-            {"title": "主题概述", "purpose": "概括主题背景和核心问题"},
-            {"title": "核心概念", "purpose": "整理关键概念"},
-            {"title": "实践要点", "purpose": "整理可操作内容"},
-            {"title": "后续问题", "purpose": "记录需要继续研究的问题"},
-        ]
+        m = re.search(r"\{.*\}", stripped, re.DOTALL)
+        try:
+            data = json.loads(m.group()) if m else {}
+        except Exception:
+            data = {}
 
-    return {"note_outline": outline}
+    note_type = str(data.get("note_type") or "学习笔记").strip()
+    outline = data.get("outline") or [
+        {"title": "主题概述", "purpose": "概括主题背景和核心问题"},
+        {"title": "核心概念", "purpose": "整理关键概念"},
+        {"title": "实践要点", "purpose": "整理可操作内容"},
+        {"title": "后续问题", "purpose": "记录需要继续研究的问题"},
+    ]
+    return {"note_type": note_type, "note_outline": outline}
 
 
 def generate_initial_note(state: NoteResearchState):
@@ -183,40 +180,39 @@ def generate_reference_queries(state: NoteResearchState):
 def retrieve_references_node(state: NoteResearchState):
     emit_node_start("retrieve_references", "正在统一检索网页、论文和学术资料")
 
-    current_round_results = []
     evidence_items = list(state.get("evidence_items", []))
     sources = list(state.get("sources", []))
 
     if not state["reference_queries"]:
         emit_event("info", text="本轮没有需要检索的参考信息。")
-        return {
-            "reference_results": [],
-            "evidence_items": evidence_items,
-            "sources": _dedupe_urls(sources),
-        }
+        return {"reference_results": [], "evidence_items": evidence_items, "sources": _dedupe_urls(sources)}
 
+    queries = []
     for item in state["reference_queries"]:
         try:
-            reference_query = ReferenceQuery(**item)
+            queries.append(ReferenceQuery(**item))
         except Exception:
             continue
 
-        source_types_text = ", ".join(reference_query.source_types)
-        emit_event("info", text=f"正在检索：{reference_query.query}；来源类型：{source_types_text}")
+    lock = Lock()
+    current_round_results = []
 
+    def fetch(rq: ReferenceQuery):
+        emit_event("info", text=f"正在检索：{rq.query}；来源类型：{', '.join(rq.source_types)}")
         try:
-            results = retrieve_references(
-                reference_query,
-                web_backend=state["search_api"],
-                max_results_per_type=5,
-            )
+            return retrieve_references(rq, web_backend=state["search_api"], max_results_per_type=5)
         except Exception as e:
-            emit_event("info", text=f"检索失败：{reference_query.query}；原因：{e}")
-            results = []
+            emit_event("info", text=f"检索失败：{rq.query}；原因：{e}")
+            return []
 
-        current_round_results.extend(results)
-        evidence_items.extend(results)
-        sources.extend(collect_reference_urls(results))
+    with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+        futures = {pool.submit(fetch, rq): rq for rq in queries}
+        for fut in as_completed(futures):
+            results = fut.result()
+            with lock:
+                current_round_results.extend(results)
+                evidence_items.extend(results)
+                sources.extend(collect_reference_urls(results))
 
     return {
         "reference_results": current_round_results,
@@ -225,54 +221,85 @@ def retrieve_references_node(state: NoteResearchState):
     }
 
 
-def verify_note(state: NoteResearchState):
-    emit_node_start("verify_note", "正在进行事实检验")
-
-    references_text = format_references_for_prompt(state["reference_results"])
-
-    report = ask_llm(
-        verify_note_prompt(
-            raw_input=state["raw_input"],
-            current_note=state["current_note"],
-            references=references_text,
-        ),
-        provider=state["llm_provider"],
-        stream=True,
-    )
-
-    return {"verification_report": report}
-
-
-def refine_note(state: NoteResearchState):
-    emit_node_start("refine_note", "正在根据统一参考信息修正并补充笔记")
+def verify_and_refine(state: NoteResearchState):
+    emit_node_start("verify_and_refine", "正在核验并修正笔记")
 
     references_text = format_references_for_prompt(state["reference_results"])
     next_iteration = state["iteration_count"] + 1
 
-    new_note = ask_llm(
-        refine_note_prompt(
+    patch_text = ask_llm(
+        verify_and_refine_prompt(
             raw_input=state["raw_input"],
             current_note=state["current_note"],
             references=references_text,
-            verification_report=state["verification_report"],
         ),
         provider=state["llm_provider"],
         stream=True,
     )
+
+    new_note = _apply_patches(state["current_note"], patch_text)
 
     intermediate_path = save_intermediate_note(
         state["run_id"],
         f"iteration_{next_iteration}_refined",
         new_note,
-    )  
+    )
 
     emit_event("info", text=f"已保存第 {next_iteration} 轮中间笔记：{intermediate_path}")
 
     return {
         "current_note": new_note,
         "iteration_count": next_iteration,
+        "verification_report": "",
         "intermediate_paths": state.get("intermediate_paths", []) + [intermediate_path],
     }
+
+
+def _apply_patches(current_note: str, patch_text: str) -> str:
+    """Apply LLM-generated PATCH blocks onto the current note."""
+    if "### NO_CHANGES" in patch_text:
+        return current_note
+
+    # Split note into sections keyed by heading
+    section_re = re.compile(r"^(#{1,3} .+)$", re.MULTILINE)
+    headings = [(m.group(1), m.start()) for m in section_re.finditer(current_note)]
+
+    def replace_section(note: str, heading: str, new_content: str) -> str:
+        idx = note.find(heading)
+        if idx == -1:
+            return note
+        # find next heading at same or higher level
+        level = len(heading.split(" ")[0])
+        after = idx + len(heading)
+        next_heading_re = re.compile(r"^#{1," + str(level) + r"} .+", re.MULTILINE)
+        m = next_heading_re.search(note, after + 1)
+        end = m.start() if m else len(note)
+        return note[:idx] + new_content.rstrip() + "\n\n" + note[end:]
+
+    # Parse patch blocks
+    patch_block_re = re.compile(
+        r"### (PATCH|PATCH_NEW): (.+?)(?: AFTER: (.+?))?\n(.*?)(?=### (?:PATCH|PATCH_NEW|NO_CHANGES)|$)",
+        re.DOTALL,
+    )
+    result = current_note
+    for m in patch_block_re.finditer(patch_text):
+        kind, heading, after_heading, content = m.group(1), m.group(2).strip(), (m.group(3) or "").strip(), m.group(4).strip()
+        if kind == "PATCH":
+            full_heading = next((h for h, _ in headings if heading in h), None)
+            if full_heading:
+                result = replace_section(result, full_heading, f"{full_heading}\n\n{content}")
+        elif kind == "PATCH_NEW":
+            insert_after = next((h for h, _ in headings if after_heading in h), None) if after_heading else None
+            new_block = f"\n\n## {heading}\n\n{content}"
+            if insert_after:
+                level = len(insert_after.split(" ")[0])
+                after_idx = result.find(insert_after)
+                next_m = re.compile(r"^#{1," + str(level) + r"} .+", re.MULTILINE).search(result, after_idx + len(insert_after) + 1)
+                pos = next_m.start() if next_m else len(result)
+                result = result[:pos] + new_block + "\n\n" + result[pos:]
+            else:
+                result = result.rstrip() + new_block
+    return result
 
 
 def route_iteration(state: NoteResearchState) -> str:
@@ -462,64 +489,44 @@ def route_after_save(state: NoteResearchState) -> str:
 def build_graph():
     builder = StateGraph(NoteResearchState)
 
-    builder.add_node("infer_note_type", infer_note_type)
-    builder.add_node("generate_dynamic_outline", generate_dynamic_outline)
+    builder.add_node("infer_type_and_outline", infer_type_and_outline)
     builder.add_node("generate_initial_note", generate_initial_note)
     builder.add_node("generate_reference_queries", generate_reference_queries)
     builder.add_node("retrieve_references", retrieve_references_node)
-    builder.add_node("verify_note", verify_note)
-    builder.add_node("refine_note", refine_note)
+    builder.add_node("verify_and_refine", verify_and_refine)
     builder.add_node("finalize_note", finalize_note)
-    
     builder.add_node("plan_note_assets", plan_note_assets)
     builder.add_node("generate_note_assets", generate_note_assets)
     builder.add_node("assemble_assets_into_note", assemble_assets_into_note)
     builder.add_node("save_markdown", save_markdown_node)
     builder.add_node("publish_notion", publish_notion_node)
 
-    builder.add_edge(START, "infer_note_type")
-    builder.add_edge("infer_note_type", "generate_dynamic_outline")
-    builder.add_edge("generate_dynamic_outline", "generate_initial_note")
+    builder.add_edge(START, "infer_type_and_outline")
+    builder.add_edge("infer_type_and_outline", "generate_initial_note")
     builder.add_conditional_edges(
         "generate_initial_note",
         route_after_initial_note,
-        {
-            "continue": "generate_reference_queries",
-            "finalize": "finalize_note",
-        },
+        {"continue": "generate_reference_queries", "finalize": "finalize_note"},
     )
-    builder.add_edge("verify_note", "refine_note")
     builder.add_edge("generate_reference_queries", "retrieve_references")
-    builder.add_edge("retrieve_references", "verify_note")
-
+    builder.add_edge("retrieve_references", "verify_and_refine")
     builder.add_conditional_edges(
-        "refine_note",
+        "verify_and_refine",
         route_iteration,
-        {
-            "continue": "generate_reference_queries",
-            "finalize": "finalize_note",
-        },
+        {"continue": "generate_reference_queries", "finalize": "finalize_note"},
     )
-
     builder.add_conditional_edges(
         "finalize_note",
         route_after_finalize,
-        {
-            "assets": "plan_note_assets",
-            "save": "save_markdown",
-        },
+        {"assets": "plan_note_assets", "save": "save_markdown"},
     )
     builder.add_edge("plan_note_assets", "generate_note_assets")
     builder.add_edge("generate_note_assets", "assemble_assets_into_note")
     builder.add_edge("assemble_assets_into_note", "save_markdown")
-
     builder.add_conditional_edges(
         "save_markdown",
         route_after_save,
-        {
-            "publish_notion": "publish_notion",
-            "end": END,
-        },
+        {"publish_notion": "publish_notion", "end": END},
     )
     builder.add_edge("publish_notion", END)
 

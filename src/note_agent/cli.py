@@ -11,7 +11,7 @@ from note_agent.io.input_loader import (
     read_text_file,
 )
 from note_agent.domain.api import NoteAgentRequest
-from note_agent.agent.runner import run_note_agent
+from note_agent.agent.runner_unified import run_note_agent
 
 
 load_dotenv()
@@ -121,6 +121,21 @@ def select_search_api() -> str:
     return mapping.get(choice, os.getenv("SEARCH_API", "duckduckgo"))
 
 
+def select_agent_mode() -> str:
+    print("\n请选择 Agent 模式：")
+    print("1. Fixed Workflow (预定义流程)")
+    print("2. ReAct Agent (自主决策工具调用)")
+
+    choice = input("> ").strip()
+
+    mapping = {
+        "1": "fixed",
+        "2": "react",
+    }
+
+    return mapping.get(choice, "fixed")
+
+
 def main():
     print(f"Note Agent v{__version__}")
     print("-" * 50)
@@ -146,6 +161,7 @@ def main():
 
     provider = select_provider()
     search_api = select_search_api()
+    mode = select_agent_mode()
 
     request = NoteAgentRequest(
         raw_input=raw_input,
@@ -155,7 +171,8 @@ def main():
         enable_assets=False,
     )
 
-    response = run_note_agent(request)
+    print(f"\n使用 {mode.upper()} 模式运行...")
+    response = run_note_agent(request, mode=mode)
 
     print("\n最终笔记已保存：")
     print(response.saved_path)

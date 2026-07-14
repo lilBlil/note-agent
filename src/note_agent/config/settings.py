@@ -36,14 +36,24 @@ MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
 }
 
 
-def get_model(provider: str = "deepseek"):
+def get_model(provider: str = "deepseek", for_tools: bool = False):
+    """
+    Get LLM model instance.
+
+    Args:
+        provider: LLM provider name
+        for_tools: If True, returns model suitable for tool calling (no stream_options)
+    """
     if provider not in MODEL_CONFIGS:
         raise ValueError(f"Unknown provider: {provider}")
     cfg = MODEL_CONFIGS[provider]
     api_key = os.getenv(str(cfg["api_key_env"]))
     if not api_key:
         raise ValueError(f"Missing {cfg['api_key_env']} — check .env")
-    model_kwargs = {"stream_options": {"include_usage": True}}
+
+    # Only include stream_options for streaming calls (not tool calls)
+    model_kwargs = {} if for_tools else {"stream_options": {"include_usage": True}}
+
     if provider == "deepseek":
         return ChatDeepSeek(
             model=str(cfg["model"]),
