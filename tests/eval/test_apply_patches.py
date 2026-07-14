@@ -372,3 +372,39 @@ Chapter 2 content."""
         assert "Chapter 2 content" in result
         # h3 subsections inside Chapter 1 should be removed (replaced along with chapter)
         assert "Subsection content" not in result
+
+
+class TestH1TitlePatchRegression:
+    """Regression for the note-destroying bug found by the benchmark harness.
+
+    The H1 title has no same-level sibling, so replace_section's "next heading
+    at same-or-higher level" boundary matched nothing and set end=len(note),
+    replacing the ENTIRE document with a single patch block. Judge scores
+    collapsed 4.75 -> 3.15 -> 1.0 across refine iterations because the model
+    frequently emits `### PATCH: <title>`. The fix bounds an H1 patch at the
+    first subheading so only the title's intro is replaced.
+    """
+
+    def test_patch_h1_title_preserves_all_sections(self) -> None:
+        patch = "### PATCH: CAP定理详解\nCAP定理描述了分布式系统的根本权衡。"
+        result = _apply_patches(FULL_NOTE, patch)
+        # every downstream section must survive
+        for heading in ["## 概述", "## C —— 一致性", "## A —— 可用性",
+                        "## P —— 分区容错性", "## 三者权衡"]:
+            assert heading in result, f"H1 patch wiped section {heading!r}"
+        # original body content must survive
+        assert "一致性要求所有节点" in result
+        assert "系统必须在C和A之间做选择" in result
+        # the new intro must be present
+        assert "根本权衡" in result
+        # sanity: note must not shrink to just the title
+        assert len(result) > len(FULL_NOTE) * 0.8
+
+    def test_patch_h1_only_replaces_intro(self) -> None:
+        """The H1 patch should replace only the title's intro paragraph."""
+        note = "# 标题\n\n旧引言段落。\n\n## 章节一\n章节一内容。"
+        patch = "### PATCH: 标题\n新引言段落。"
+        result = _apply_patches(note, patch)
+        assert "新引言段落" in result
+        assert "旧引言段落" not in result
+        assert "## 章节一" in result and "章节一内容" in result

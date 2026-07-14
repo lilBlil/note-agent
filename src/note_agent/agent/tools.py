@@ -71,6 +71,14 @@ def _apply_patches(current_note: str, patch_text: str) -> str:
         next_heading_re = re.compile(r"^#{1," + str(level) + r"} .+", re.MULTILINE)
         m = next_heading_re.search(note, after + 1)
         end = m.start() if m else len(note)
+        # Guard: the H1 title has no sibling, so a naive "same-or-higher level"
+        # boundary swallows the ENTIRE document, wiping every section below the
+        # title. When patching the title, bound the span at the first subheading
+        # so only the title's intro paragraph is replaced.
+        if level == 1 and m is None:
+            sub = re.compile(r"^#{2,6} .+", re.MULTILINE).search(note, after + 1)
+            if sub:
+                end = sub.start()
         return note[:idx] + new_content.rstrip() + "\n\n" + note[end:]
 
     # Parse patch blocks

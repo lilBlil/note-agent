@@ -367,6 +367,37 @@ def generate_assets_prompt(current_note: str, asset_plan: str) -> str:
 """
 
 
+def rewrite_note_prompt(
+    raw_input: str,
+    current_note: str,
+    references: str,
+) -> str:
+    """Baseline for the PATCH mechanism: regenerate the WHOLE note in one shot.
+
+    Used only by the benchmark harness to quantify how many output tokens the
+    incremental PATCH approach saves versus full rewriting at equal quality.
+    """
+    return f"""
+你是技术文档审校与改进 Agent。请根据参考信息核验并改进下面的笔记。
+
+用户原始输入：
+{raw_input}
+
+当前笔记：
+{current_note}
+
+参考信息检索结果：
+{references}
+
+改进要求：
+- 修正事实错误、逻辑矛盾、与参考信息冲突的内容
+- 补充缺失的推导过程、术语定义、实证数据（句尾标 [R编号]）
+- 消除无据断言
+
+输出完整的改进后笔记全文（第一行 # 标题，不要 ```markdown 包裹），不要输出解释。
+"""
+
+
 def generate_title_prompt(final_note: str) -> str:
     return f"""
 请为下面这篇笔记生成一个简洁、准确的文件名标题。

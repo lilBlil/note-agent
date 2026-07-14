@@ -62,10 +62,18 @@ def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> st
         if chunk.content:
             emit_token(chunk.content)
             if should_print:
-                print(chunk.content, end="", flush=True)
+                # Guard against consoles whose encoding (e.g. Windows GBK) can't
+                # represent some chars; never let display kill a real run.
+                try:
+                    print(chunk.content, end="", flush=True)
+                except UnicodeEncodeError:
+                    pass
             chunks.append(chunk.content)
     if should_print:
-        print()
+        try:
+            print()
+        except UnicodeEncodeError:
+            pass
 
     record_usage(
         node_name=_current_node.get(),
