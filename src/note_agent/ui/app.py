@@ -26,15 +26,8 @@ def _split_input(text: str) -> tuple[str, list[str]]:
     return remainder, urls
 
 
-def _handle_submission(submitted, mode: str, settings: dict) -> None:
-    """Turn a chat_input submission into a pending RunView, then rerun."""
-    if submitted is None:
-        return
-    # chat_input with accept_file returns a dict-like with .text and .files
-    text = getattr(submitted, "text", None)
-    files = getattr(submitted, "files", None)
-    if text is None and files is None:  # plain string (no file support path)
-        text, files = str(submitted), []
+def _build_and_set_view(text: str, files: list, mode: str, settings: dict) -> bool:
+    """Build a pending RunView from composer input. Returns True if submitted."""
     text = text or ""
     files = files or []
 
@@ -43,7 +36,7 @@ def _handle_submission(submitted, mode: str, settings: dict) -> None:
     file_names = [f.name for f in files]
 
     if not (manual_text or file_texts or urls):
-        return
+        return False
 
     view = new_view(
         mode=mode,
@@ -52,11 +45,11 @@ def _handle_submission(submitted, mode: str, settings: dict) -> None:
         settings=settings,
     )
     set_view(view)
-    st.rerun()
+    return True
 
 
 def _render_workspace(view: dict) -> None:
-    """Task header + Status(25%) | Output(75%) + details, from a RunView."""
+    """Task header + Status(25%) | Output(75%) + download + details."""
     render.task_header(view)
     col_status, col_output = st.columns([1, 3], gap="medium")
     status_ph = col_status.empty()
@@ -69,6 +62,10 @@ def _render_workspace(view: dict) -> None:
         render.status_panel(status_ph, view)
         render.output_canvas(output_ph, view)
 
+    # Compact download link + collapsed details, side by side to save height.
+    dl_col, _ = st.columns([1, 3])
+    with dl_col:
+        render.download_bar(view)
     render.details_panel(view)
 
 
@@ -80,7 +77,7 @@ def _render_empty_state() -> None:
             "#### 开始一次研究\n\n"
             "在下方输入主题、粘贴文本，或添加文件与网站。"
             "Agent 会分析需求、检索资料、核验并生成结构化研究笔记。\n\n"
-            "左侧可切换 LLM、检索源、迭代设置与历史记录。"
+            "左侧可切换 LLM、检索源、迭代设置与项目历史。"
         )
 
 
@@ -89,23 +86,50 @@ _MODE_LABELS = {"固定流程": "fixed", "ReAct 自主": "react"}
 
 def _current_mode() -> str:
     """Resolve mode from the persisted selector key (before its widget runs)."""
-    return _MODE_LABELS.get(st.session_state.get("mode_choice", "固定流程"), "fixed")
+    return _MODE_LABELS.get(st.session_state.get("na_mode", "固定流程"), "fixed")
 
 
-def _mode_selector() -> str:
-    """Research-mode segmented control, sitting just above the input."""
-    st.session_state.setdefault("mode_choice", "固定流程")
-    choice = st.segmented_control(
-        "研究模式", list(_MODE_LABELS.keys()),
-        key="mode_choice", label_visibility="collapsed",
-    )
-    return _MODE_LABELS.get(choice, "fixed")
+def _composer(settings: dict) -> None:
+    """ChatGPT-style box: textarea with mode selector + upload(+) + send(↑)
+    grouped inside, on the right. Send builds a pending view and reruns."""
+    with st.container(key="na_composer"):
+        text = st.text_area(
+            "输入", key="na_text", height=76, label_visibility="collapsed",
+            placeholder="输入主题、粘贴文本，或添加文件与网站…",
+        )
+        with st.container(key="na_ctrlrow"):
+            # mode(left) · upload(+) · send(↑) — all on the right of the box.
+            spacer, c_mode, c_up, c_send = st.columns([6, 3, 1, 1],
+                                                      vertical_alignment="center")
+            with c_mode:
+                st.session_state.setdefault("na_mode", "固定流程")
+                st.segmented_control(
+                    "研究模式", list(_MODE_LABELS.keys()),
+                    key="na_mode", label_visibility="collapsed",
+                )
+            with c_up:
+                with st.popover("＋", use_container_width=True):
+                    files = st.file_uploader(
+                        "添加文件（.txt / .md）", type=["txt", "md"],
+                        accept_multiple_files=True, key="na_files",
+                        label_visibility="collapsed",
+                    )
+                    st.caption("网站链接：直接粘贴到输入框，将自动识别。")
+            with c_send:
+                send = st.button("↑", key="na_send", use_container_width=True,
+                                 help="开始研究")
+
+    if send:
+        mode = _MODE_LABELS.get(st.session_state.get("na_mode", "固定流程"), "fixed")
+        if _build_and_set_view(text, st.session_state.get("na_files") or [],
+                               mode, settings):
+            st.rerun()
 
 
 def main() -> None:
     theme.inject()
-    mode = _current_mode()
-    settings = build_sidebar(mode)
+    render.app_header()
+    settings = build_sidebar(_current_mode())
 
     view = get_view()
     if view:
@@ -113,14 +137,7 @@ def main() -> None:
     else:
         _render_empty_state()
 
-    # Research mode + pinned ChatGPT-style input, always visible at the bottom.
-    mode = _mode_selector()
-    submitted = st.chat_input(
-        "输入主题、粘贴文本，或添加文件与网站…",
-        accept_file="multiple",
-        file_type=["txt", "md"],
-    )
-    _handle_submission(submitted, mode, settings)
+    _composer(settings)
 
 
 if __name__ == "__main__":

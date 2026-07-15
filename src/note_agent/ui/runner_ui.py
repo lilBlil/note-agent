@@ -26,9 +26,8 @@ def build_combined_input(params: dict, view: dict):
     for url in params.get("urls", []):
         try:
             webpage_texts.append((url, fetch_webpage_text(url)))
-            view["trace"].append(f"抓取网页：{url}")
-        except Exception as exc:  # non-fatal: skip the bad URL
-            view["trace"].append(f"抓取失败 {url}：{exc}")
+        except Exception:  # non-fatal: skip the bad URL
+            pass
 
     return _combine(
         manual_text=params.get("manual_text", ""),
@@ -44,9 +43,10 @@ def _fold_event(view: dict, event: dict) -> None:
 
     if etype == "node_start":
         node, label = event["node_name"], event["step_label"]
+        # Update cumulative usage BEFORE sealing the previous step so its
+        # token delta is attributed correctly.
         if event.get("usage"):
             view["usage"] = event["usage"]
-        view["trace"].append(label)
         if mode == "react":
             if node == "agent":
                 state.start_react_step(view, label)
@@ -63,8 +63,6 @@ def _fold_event(view: dict, event: dict) -> None:
         text = event.get("text", "")
         if mode == "react" and text:
             state.add_react_observe(view, text)
-        if text:
-            view["trace"].append(("⚠ " if etype == "warning" else "") + text)
 
     elif etype == "done":
         st_ = event.get("state", {})

@@ -20,9 +20,9 @@ COLORS = {
 }
 
 # Height (px) of the two independently-scrolling main panes. Tuned to fit a
-# single ~900px viewport alongside the task header and pinned input.
-PANE_HEIGHT = 500
-STATUS_HEIGHT = 500
+# single viewport alongside the app header, task card and bottom composer.
+PANE_HEIGHT = 430
+STATUS_HEIGHT = 430
 
 _CSS = """
 <style>
@@ -39,25 +39,83 @@ _CSS = """
 /* Sidebar: quiet panel. */
 section[data-testid="stSidebar"] { background: var(--na-panel); border-right: 1px solid var(--na-border); }
 section[data-testid="stSidebar"] .block-container { padding-top: 1.2rem; }
+
+/* Workspace header (right side, top): product name + version only. */
+.na-appbar { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .6rem; }
+.na-appbar .name { font-size: 1.15rem; font-weight: 700; color: var(--na-text); letter-spacing: .01em; }
+.na-appbar .ver { font-size: .74rem; color: var(--na-muted); }
 </style>
 """
 
 _CSS_INPUT = """
 <style>
-/* ChatGPT-style pinned input bar. */
-div[data-testid="stBottomBlockContainer"], div[data-testid="stBottom"] > div {
-  background: var(--na-bg);
-}
-div[data-testid="stChatInput"] {
+/* ---- ChatGPT-style composer: one rounded dark box wrapping text + controls ---- */
+.st-key-na_composer {
   background: var(--na-panel-alt);
   border: 1px solid var(--na-border);
-  border-radius: 22px;
-  padding: 4px 6px;
-  box-shadow: 0 2px 18px rgba(0,0,0,.35);
+  border-radius: 24px;
+  padding: .5rem .6rem .4rem 1rem;
+  box-shadow: 0 2px 20px rgba(0,0,0,.35);
 }
-div[data-testid="stChatInput"] textarea { color: var(--na-text); font-size: 0.96rem; }
-div[data-testid="stChatInput"] textarea::placeholder { color: var(--na-muted); }
-div[data-testid="stChatInput"]:focus-within { border-color: var(--na-accent); }
+.st-key-na_composer:focus-within { border-color: #3a3d44; }
+
+/* Text area lives INSIDE the box: transparent, borderless, no double ring. */
+.st-key-na_composer .stTextArea [data-baseweb="textarea"],
+.st-key-na_composer .stTextArea [data-baseweb="base-input"] {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.st-key-na_composer .stTextArea [data-baseweb="textarea"]:focus-within {
+  border: none !important; box-shadow: none !important;
+}
+.st-key-na_composer .stTextArea textarea {
+  background: transparent !important;
+  color: var(--na-text);
+  font-size: .98rem;
+  padding: .35rem .2rem;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.st-key-na_composer .stTextArea textarea:focus,
+.st-key-na_composer .stTextArea textarea:focus-visible {
+  box-shadow: none !important; outline: none !important; border: none !important;
+}
+.st-key-na_composer .stTextArea textarea::placeholder { color: var(--na-muted); }
+.st-key-na_composer .stTextArea label { display: none; }
+/* Streamlit's "Press Enter" helper + the resize handle: hide for a clean box. */
+.st-key-na_composer [data-testid="InputInstructions"] { display: none; }
+.st-key-na_composer .stTextArea textarea { resize: none; }
+</style>
+"""
+
+_CSS_COMPOSER_CTRL = """
+<style>
+/* Control row: mode selector (left) + upload (+) + send (arrow), right-aligned. */
+.st-key-na_ctrlrow { align-items: center; }
+.st-key-na_ctrlrow [data-testid="stHorizontalBlock"] { align-items: center; gap: .35rem; }
+
+/* Segmented control -> compact pill sitting inside the box. */
+.st-key-na_mode [data-baseweb="button-group"] { gap: 2px; }
+.st-key-na_mode button {
+  background: var(--na-panel) !important; border: 1px solid var(--na-border) !important;
+  color: var(--na-muted) !important; border-radius: 999px !important;
+  padding: 2px 12px !important; font-size: .8rem !important; min-height: 30px !important;
+}
+.st-key-na_mode button[aria-checked="true"], .st-key-na_mode button[kind="segmented_controlActive"] {
+  background: var(--na-accent) !important; color: #fff !important; border-color: var(--na-accent) !important;
+}
+.st-key-na_mode label { display: none; }
+
+/* Round icon buttons for upload / send. */
+.st-key-na_up button, .st-key-na_send button {
+  border-radius: 999px !important; min-height: 38px !important; height: 38px !important;
+  width: 38px !important; padding: 0 !important; font-size: 1.1rem !important;
+}
+.st-key-na_up button { background: var(--na-panel) !important; border: 1px solid var(--na-border) !important; color: var(--na-text) !important; }
+.st-key-na_send button { background: var(--na-text) !important; border: none !important; color: #111 !important; }
+.st-key-na_send button:hover { background: #fff !important; }
+.st-key-na_send button:disabled { background: var(--na-border) !important; color: var(--na-muted) !important; }
 </style>
 """
 
@@ -78,6 +136,7 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 12px; }
 .na-step.pending { color: var(--na-muted); }
 .na-step.running { color: var(--na-run); }
 .na-step.done .ic { color: var(--na-ok); }
+.na-metric { color: var(--na-muted); font-size: .76rem; }
 .na-react-block { border-left: 2px solid var(--na-border); padding: .1rem 0 .1rem .7rem;
   margin: .2rem 0 .7rem; }
 .na-react-tag { color: var(--na-muted); font-size: .72rem; font-weight: 700;
@@ -90,4 +149,5 @@ def inject() -> None:
     """Inject the full theme. Call once, first thing in the app."""
     st.markdown(_CSS, unsafe_allow_html=True)
     st.markdown(_CSS_INPUT, unsafe_allow_html=True)
+    st.markdown(_CSS_COMPOSER_CTRL, unsafe_allow_html=True)
     st.markdown(_CSS_PANELS, unsafe_allow_html=True)

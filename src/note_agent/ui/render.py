@@ -11,9 +11,28 @@ import html
 
 import streamlit as st
 
+from note_agent import __version__
 from note_agent.ui import theme
 
 _MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
+# Backend appends a "## Sources" section to the note body; we surface sources
+# only in 详细信息, so strip that trailing section from the canvas + download.
+_SOURCES_RE = re.compile(r"\n#{1,6}\s*(sources|参考(资料|文献)?|references)\s*\n.*$",
+                         re.IGNORECASE | re.DOTALL)
+
+
+def strip_sources(note: str) -> str:
+    """Drop the trailing Sources/参考资料 section from a note body."""
+    return _SOURCES_RE.sub("", note or "").rstrip() + "\n" if note else ""
+
+
+def app_header() -> None:
+    """Workspace header (right side, top): product name + version only."""
+    st.markdown(
+        f'<div class="na-appbar"><span class="name">Note Agent</span>'
+        f'<span class="ver">v{__version__}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _mermaid(code: str, height: int = 420) -> None:
@@ -66,6 +85,20 @@ def task_header(view: dict) -> None:
 _STEP_IC = {"done": "✓", "running": "●", "pending": "○"}
 
 
+def _fmt_tok(n: int) -> str:
+    return f"{n/1000:.1f}k" if n >= 1000 else str(int(n))
+
+
+def _step_metrics(n: dict) -> str:
+    """Trailing '· 3.2s · 1.2k tok' for a finished step, else ''."""
+    if "dur" not in n:
+        return ""
+    parts = [f"{n['dur']:.1f}s"]
+    if n.get("tok"):
+        parts.append(f"{_fmt_tok(n['tok'])} tok")
+    return '  <span class="na-metric">· ' + " · ".join(parts) + "</span>"
+
+
 def _status_running_flag(view: dict) -> str:
     if view["status"] == "running":
         return '<span style="color:var(--na-run)">● 运行中</span>'
@@ -91,9 +124,10 @@ def _render_fixed_status(view: dict) -> None:
         from note_agent.ui.state import NODE_LABELS
         label = label or NODE_LABELS.get(node, node)
         status = seen.get(node, "pending")
+        nd = next((n for n in view["nodes"] if n["node"] == node), {})
         rows.append(
             f'<div class="na-step {status}"><span class="ic">{_STEP_IC[status]}</span>'
-            f'<span>{html.escape(label)}</span></div>'
+            f'<span>{html.escape(label)}{_step_metrics(nd)}</span></div>'
         )
     st.markdown("".join(rows), unsafe_allow_html=True)
 
@@ -105,7 +139,7 @@ def _render_react_status(view: dict) -> None:
         st.caption("Agent 正在启动…")
         return
     for i, step in enumerate(view["react"], 1):
-        blocks = [f'<div class="na-react-tag">Iteration {i}</div>']
+        blocks = [f'<div class="na-react-tag">Iteration {i}{_step_metrics(step)}</div>']
         if step.get("think"):
             blocks.append(f'<div><span class="na-react-tag">Think</span><br>{html.escape(step["think"])}</div>')
         if step.get("act"):
@@ -126,11 +160,16 @@ def status_panel(placeholder, view: dict) -> None:
 
 
 def output_canvas(placeholder, view: dict) -> None:
-    """Repaint the Output canvas (Notion/ChatGPT-Canvas style, own scroll)."""
+    """Repaint the Output canvas (Notion/ChatGPT-Canvas style, own scroll).
+
+    The note body's trailing Sources section is stripped here — sources live
+    only in 详细信息.
+    """
     with placeholder.container(height=theme.PANE_HEIGHT):
         st.markdown('<div class="na-eyebrow">生成内容 · Output</div>', unsafe_allow_html=True)
-        note = view.get("final_note") or view.get("live_text") or ""
-        if note:
+        raw = view.get("final_note") or view.get("live_text") or ""
+        note = strip_sources(raw)
+        if note.strip():
             _markdown_with_mermaid(note)
         elif view["status"] == "running":
             if view["mode"] == "react":
@@ -164,11 +203,36 @@ def _usage_lines(usage: dict) -> list[str]:
     return lines
 
 
+def _note_filename(view: dict) -> str:
+    saved = (view.get("_done_state") or {}).get("saved_path") or ""
+    if saved:
+        name = saved.replace("\\", "/").rsplit("/", 1)[-1]
+        if name:
+            return name
+    base = view.get("run_id") or "note"
+    return f"{base}.md"
+
+
+def download_bar(view: dict) -> None:
+    """A single compact download link for the finished note (no Sources tail)."""
+    note = strip_sources(view.get("final_note") or "")
+    if view.get("status") != "done" or not note.strip():
+        return
+    st.download_button(
+        "⬇ 下载 Markdown",
+        data=note.encode("utf-8"),
+        file_name=_note_filename(view),
+        mime="text/markdown",
+        use_container_width=False,
+        key=f"dl_{view.get('run_id') or 'note'}",
+    )
+
+
 def details_panel(view: dict) -> None:
-    """Collapsed-by-default '详细信息': sources, token usage, execution trace."""
+    """Collapsed-by-default '详细信息': sources + token usage only."""
     with st.expander("详细信息", expanded=False):
-        with st.container(height=300):
-            tabs = st.tabs(["Sources", "Token Usage", "Execution Trace"])
+        with st.container(height=280):
+            tabs = st.tabs(["资源", "Token 用量"])
             with tabs[0]:
                 srcs = view.get("sources") or []
                 if srcs:
@@ -177,16 +241,3 @@ def details_panel(view: dict) -> None:
                     st.caption("暂无来源。")
             with tabs[1]:
                 st.markdown("\n\n".join(_usage_lines(view.get("usage") or {})))
-            with tabs[2]:
-                trace = view.get("trace") or []
-                if trace:
-                    st.markdown("\n".join(f"{i+1}. {t}" for i, t in enumerate(trace)))
-                else:
-                    st.caption("暂无执行记录。")
-        meta = []
-        if view.get("run_id"):
-            meta.append(f"Run ID `{view['run_id']}`")
-        if view.get("run_log_dir"):
-            meta.append(f"日志 `{view['run_log_dir']}`")
-        if meta:
-            st.caption("  ·  ".join(meta))
