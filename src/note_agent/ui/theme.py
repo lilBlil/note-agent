@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import streamlit as st
 
 # Height (px) of the two independently-scrolling main panes. Tuned to fit a
@@ -37,7 +38,13 @@ section[data-testid="stSidebar"] .stButton button p {
   text-align: left !important; width: 100% !important; margin: 0 !important;
   white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important;
 }
-section[data-testid="stSidebar"] .stButton button > div { width: 100% !important; align-items: flex-start !important; }
+section[data-testid="stSidebar"] .stButton button > div {
+  width: 100% !important; align-items: flex-start !important;
+  justify-content: flex-start !important; text-align: left !important;
+}
+section[data-testid="stSidebar"] .stButton button [data-testid="stMarkdownContainer"] {
+  width: 100% !important; text-align: left !important;
+}
 /* Kill the extra vertical gap between list rows. */
 section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .12rem !important; }
 section[data-testid="stSidebar"] .stButton { margin: 0 !important; }
@@ -54,8 +61,8 @@ section[data-testid="stSidebar"] .stExpander [data-testid="stExpanderDetails"] {
 
 /* Workspace header (right side, top): product name + version only. */
 .na-appbar { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .6rem; }
-.na-appbar .name { font-size: 1.5rem; font-weight: 700; color: var(--na-text); letter-spacing: .01em; }
-.na-appbar .ver { font-size: .9rem; color: var(--na-muted); }
+.na-appbar .name { font-size: 1.8rem; font-weight: 700; color: var(--na-text); letter-spacing: .01em; }
+.na-appbar .ver { font-size: 1.2rem; color: var(--na-muted); }
 </style>
 """
 
@@ -169,8 +176,14 @@ div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 12px; }
 
 
 def inject() -> None:
-    """Inject the full theme. Call once, first thing in the app."""
-    st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown(_CSS_INPUT, unsafe_allow_html=True)
-    st.markdown(_CSS_COMPOSER_CTRL, unsafe_allow_html=True)
-    st.markdown(_CSS_PANELS, unsafe_allow_html=True)
+    """Inject the full theme. Call once, first thing in the app.
+
+    A CSS comment keyed on this file's mtime is injected into each
+    ``<style>`` block so that Streamlit's content hash changes after
+    every source edit — without the comment the delta protocol may skip
+    re-sending the style blocks and the browser shows stale CSS.
+    """
+    _mtime = int(os.path.getmtime(__file__)) if __file__ else 0
+    _tag = f"/* theme.mtime:{_mtime} */"
+    for block in (_CSS, _CSS_INPUT, _CSS_COMPOSER_CTRL, _CSS_PANELS):
+        st.markdown(block.replace("<style>", f"<style>{_tag}", 1), unsafe_allow_html=True)

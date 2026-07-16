@@ -1,6 +1,6 @@
 [project]
 name = "langchain-note-agent"
-version = "4.0.0"
+version = "1.0.0"
 description = "A LangGraph and LangChain research note agent with retrieval, verification, and optional multimodal assets."
 readme = "README.md"
 requires-python = ">=3.11"

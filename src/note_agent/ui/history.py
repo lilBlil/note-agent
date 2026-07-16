@@ -10,6 +10,33 @@ from note_agent.ui.runner_ui import _norm_sources
 _RUNS = Path("runs")
 
 
+def _md_title(run_dir: Path) -> str:
+    """First markdown H1 of the finished note, else ''."""
+    snap_p = run_dir / "final_state.json"
+    if not snap_p.exists():
+        return ""
+    try:
+        snap = json.loads(snap_p.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    note = snap.get("final_note") or snap.get("current_note") or ""
+    for line in note.splitlines():
+        s = line.strip()
+        if s.startswith("# "):
+            return s.lstrip("#").strip()
+    return ""
+
+
+def _project_name(run_dir: Path, meta: dict) -> str:
+    """Prefer the note's H1 title; fall back to the first line of the input."""
+    title = _md_title(run_dir)
+    if title:
+        return title
+    raw = (meta.get("raw_input_preview") or "").strip()
+    first = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
+    return first
+
+
 def list_runs(limit: int = 40) -> list[dict]:
     """Recent runs, newest first. Each: {run_id, preview, status, mode?}."""
     if not _RUNS.exists():
@@ -25,7 +52,7 @@ def list_runs(limit: int = 40) -> list[dict]:
             continue
         entries.append({
             "run_id": meta.get("run_id", d.name),
-            "preview": (meta.get("raw_input_preview") or "").strip(),
+            "preview": _project_name(d, meta),
             "status": meta.get("status", "unknown"),
             "created_at": meta.get("created_at", ""),
         })
