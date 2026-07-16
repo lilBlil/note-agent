@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -86,6 +86,40 @@ class TestNotionClientCreatePage:
         call_kwargs = client._client.pages.create.call_args.kwargs
         assert call_kwargs["parent"]["page_id"] == "explicit_parent"
 
+    def test_retries_transient_create_failure(self, monkeypatch, mock_notion_sdk) -> None:
+        monkeypatch.setenv("NOTION_API_KEY", "secret")
+        monkeypatch.setenv("NOTION_PARENT_PAGE_ID", "parent_123")
+
+        client = NotionClient()
+        client._client.pages.create.side_effect = [
+            ConnectionResetError(10054, "connection reset"),
+            {"url": "https://notion.so/Page", "id": "page_id"},
+        ]
+
+        with patch("note_agent.notion.client.time.sleep") as sleep:
+            url, page_id = client.create_page("Test", [{"object": "block"}])
+
+        assert url == "https://notion.so/Page"
+        assert page_id == "page_id"
+        assert client._client.pages.create.call_count == 2
+        sleep.assert_called_once_with(1.0)
+
+    def test_does_not_retry_non_transient_create_failure(
+        self, monkeypatch, mock_notion_sdk
+    ) -> None:
+        monkeypatch.setenv("NOTION_API_KEY", "secret")
+        monkeypatch.setenv("NOTION_PARENT_PAGE_ID", "parent_123")
+
+        client = NotionClient()
+        client._client.pages.create.side_effect = ValueError("bad request")
+
+        with patch("note_agent.notion.client.time.sleep") as sleep:
+            with pytest.raises(ValueError, match="bad request"):
+                client.create_page("Test", [{"object": "block"}])
+
+        assert client._client.pages.create.call_count == 1
+        sleep.assert_not_called()
+
     def test_raises_if_no_parent_id(self, monkeypatch, mock_notion_sdk) -> None:
         monkeypatch.setenv("NOTION_API_KEY", "secret")
         monkeypatch.delenv("NOTION_PARENT_PAGE_ID", raising=False)
@@ -107,3 +141,19 @@ class TestNotionClientAppendBlocks:
             block_id="page_id_1",
             children=[{"object": "block"}],
         )
+
+    def test_retries_transient_append_failure(self, monkeypatch, mock_notion_sdk) -> None:
+        monkeypatch.setenv("NOTION_API_KEY", "secret")
+        monkeypatch.setenv("NOTION_PARENT_PAGE_ID", "p")
+
+        client = NotionClient()
+        client._client.blocks.children.append.side_effect = [
+            ConnectionResetError(10054, "connection reset"),
+            None,
+        ]
+
+        with patch("note_agent.notion.client.time.sleep") as sleep:
+            client.append_blocks("page_id_1", [{"object": "block"}])
+
+        assert client._client.blocks.children.append.call_count == 2
+        sleep.assert_called_once_with(1.0)

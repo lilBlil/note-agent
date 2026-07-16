@@ -3,11 +3,35 @@
 from __future__ import annotations
 
 import os
+import time
+from collections.abc import Callable
 from typing import Any
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
+_DEFAULT_MAX_ATTEMPTS = 4
+_DEFAULT_RETRY_DELAY_SECONDS = 1.0
+
+
+def _is_retryable_error(error: BaseException) -> bool:
+    """Return True for transient Notion/network failures."""
+    status = getattr(error, "status", None)
+    if status in _RETRYABLE_STATUS_CODES:
+        return True
+
+    if isinstance(error, (ConnectionError, TimeoutError, OSError)):
+        return True
+
+    try:
+        import httpx
+    except ImportError:
+        return False
+
+    return isinstance(error, (httpx.TransportError, httpx.TimeoutException))
 
 
 class NotionClient:
@@ -29,11 +53,28 @@ class NotionClient:
         self._parent_page_id = parent_page_id or os.getenv("NOTION_PARENT_PAGE_ID", "")
         if not self._token:
             raise ValueError("Missing NOTION_API_KEY — check .env")
-        self._client = Client(auth=self._token)
+        self._client = Client(auth=self._token, timeout_ms=60_000)
+        self._max_attempts = _DEFAULT_MAX_ATTEMPTS
+        self._retry_delay_seconds = _DEFAULT_RETRY_DELAY_SECONDS
 
     @property
     def parent_page_id(self) -> str:
         return self._parent_page_id
+
+    def _request_with_retries(self, request: Callable[[], Any]) -> Any:
+        """Run a Notion SDK call with bounded retries for transient failures."""
+        last_error: BaseException | None = None
+
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                return request()
+            except Exception as error:
+                last_error = error
+                if attempt >= self._max_attempts or not _is_retryable_error(error):
+                    raise
+                time.sleep(self._retry_delay_seconds * (2 ** (attempt - 1)))
+
+        raise RuntimeError("Notion request failed without an exception") from last_error
 
     def create_page(
         self,
@@ -46,10 +87,12 @@ class NotionClient:
         if not parent_id:
             raise ValueError("No parent_page_id provided and NOTION_PARENT_PAGE_ID not set")
 
-        response = self._client.pages.create(
-            parent={"page_id": parent_id},
-            properties={"title": {"title": [{"text": {"content": title}}]}},
-            children=blocks,
+        response = self._request_with_retries(
+            lambda: self._client.pages.create(
+                parent={"page_id": parent_id},
+                properties={"title": {"title": [{"text": {"content": title}}]}},
+                children=blocks,
+            )
         )
         return response["url"], response["id"]
 
@@ -59,4 +102,6 @@ class NotionClient:
         blocks: list[dict[str, Any]],
     ) -> None:
         """Append blocks to an existing page."""
-        self._client.blocks.children.append(block_id=page_id, children=blocks)
+        self._request_with_retries(
+            lambda: self._client.blocks.children.append(block_id=page_id, children=blocks)
+        )
