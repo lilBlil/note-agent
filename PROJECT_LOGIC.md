@@ -199,7 +199,6 @@ START → agent ⇄ tools
 | `build_initial_state(request, run_id)` | 从请求构建初始 state dict |
 | `build_response(result)` | 从终态构建 `NoteAgentResponse` |
 | `run_note_agent(request)` | 同步阻塞运行：`graph.invoke`，注册事件 handler，存快照，收尾 |
-| `stream_note_agent(request)` | 流式：`graph.stream(stream_mode="updates")`，逐节点 yield |
 | `stream_note_agent_events(request)` | 事件流：图跑在 daemon 线程，主线程用 `Queue` 拉事件 + `stop` Event 优雅中断 |
 
 ### `agent/runner_react.py`（ReAct 服务层）
@@ -216,13 +215,12 @@ START → agent ⇄ tools
 | `summarize_usage()` | 汇总总量 + 按节点聚合 |
 
 ### `agent/prompts.py`（提示词模板）
-`react_system_prompt`（ReAct 系统提示，含工具列表/流程建议/决策原则）、`_extract_headings`（抽标题供定位）、`infer_type_and_outline_prompt`、`generate_initial_note_prompt`、`generate_reference_queries_prompt`、`verify_and_refine_prompt`（输出 PATCH）、`verify_note_prompt` + `refine_note_prompt`（旧版两段式核验，现由 verify_and_refine 合并）、`finalize_note_prompt`、`plan_assets_prompt`、`generate_assets_prompt`、`generate_title_prompt`。
+`react_system_prompt`（ReAct 系统提示，含工具列表/流程建议/决策原则）、`infer_type_and_outline_prompt`、`generate_initial_note_prompt`、`generate_reference_queries_prompt`、`verify_and_refine_prompt`（输出 PATCH）、`finalize_note_prompt`、`plan_assets_prompt`、`generate_assets_prompt`、`generate_title_prompt`。
 
 ### `config/settings.py` & `config/llm.py`
 | 函数 | 作用 |
 |------|------|
 | `get_model(provider, for_tools)` | 按 `MODEL_CONFIGS` 建 LLM 实例（DeepSeek 用 `ChatDeepSeek`，其余走 `ChatOpenAI` + base_url）；`for_tools=True` 时去掉 `stream_options`（工具调用不能带）|
-| `get_llm_for_provider(provider)` | 供工具绑定用的模型 |
 | `_extract_usage(response)` | 从 AIMessage/chunk 抽 (input, output) token，多字段兜底 |
 | `ask_llm(prompt, provider, stream)` | **统一 LLM 调用封装**：流式时逐 chunk `emit_token` + 累积；非流式直接 invoke；两种都 `record_usage` 记账 |
 
@@ -256,7 +254,7 @@ START → agent ⇄ tools
 - Markdown 生成：`formula_to_markdown` / `code_to_markdown` / `mermaid_to_markdown` / `chart_to_markdown`（有图用图，否则列数据）、`build_asset_markdown_items`（生成 (标题, md) 列表）、`inject_assets_into_markdown`（按标题模糊匹配插入，剩余的追加到"自动生成资产"章节）
 
 ### `notion/`（发布）
-- `client.py`：`NotionClient`（`create_page` / `append_blocks` / `search_pages`，懒加载 notion-client SDK）
+- `client.py`：`NotionClient`（`create_page` / `append_blocks`，懒加载 notion-client SDK）
 - `converter.py`：`markdown_to_notion_blocks` + 一系列内联解析（`_parse_inline_rich_text` 处理 **粗体**/*斜体*/`代码`/~~删除~~/[链接]/$公式$，支持 4 种 LaTeX 分隔符）、标题/代码块/列表/表格/分割线解析
 - `publish.py`：`publish_note(markdown, title, ...)` —— 转 blocks 后按 Notion **100 block/请求** 限制分批 create+append
 

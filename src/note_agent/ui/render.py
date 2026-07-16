@@ -83,37 +83,70 @@ def task_header(view: dict) -> None:
 
 
 _STEP_IC = {"done": "✓", "running": "●", "pending": "○"}
+_STEP_WORD = {"done": "已完成 ", "running": "正在 ", "pending": ""}
+
+# Strip decorative emoji / pictographs so labels read like a product panel,
+# not a debug log. (Workflow-side labels still carry 🧭📚 etc.)
+_EMOJI_RE = re.compile(
+    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF"
+    "⬀-⯿←-⇿️✅✔✖❌✨]",
+)
+
+
+def _clean(s: str) -> str:
+    return _EMOJI_RE.sub("", s or "").replace("  ", " ").strip(" :：·-")
 
 
 def _fmt_tok(n: int) -> str:
-    return f"{n/1000:.1f}k" if n >= 1000 else str(int(n))
+    return f"{n/1000:.1f}K" if n >= 1000 else str(int(n))
 
 
-def _step_metrics(n: dict) -> str:
-    """Trailing '· 3.2s · 1.2k tok' for a finished step, else ''."""
-    if "dur" not in n:
-        return ""
-    parts = [f"{n['dur']:.1f}s"]
-    if n.get("tok"):
-        parts.append(f"{_fmt_tok(n['tok'])} tok")
-    return '  <span class="na-metric">· ' + " · ".join(parts) + "</span>"
+def _run_stats(view: dict) -> tuple[float, int]:
+    """(elapsed_seconds, total_tokens) for the bottom stat row."""
+    import time
+    total = sum((n.get("dur") or 0) for n in view.get("nodes", []))
+    total += sum((s.get("dur") or 0) for s in view.get("react", []))
+    if view.get("status") == "running" and view.get("_t0") is not None:
+        total += max(0.0, time.monotonic() - view["_t0"])
+    tok = int((view.get("usage") or {}).get("total_tokens") or 0)
+    return total, tok
 
 
-def _status_running_flag(view: dict) -> str:
-    if view["status"] == "running":
-        return '<span style="color:var(--na-run)">● 运行中</span>'
-    if view["status"] == "error":
-        return '<span style="color:var(--na-err)">● 出错</span>'
-    return '<span style="color:var(--na-ok)">✓ 完成</span>'
+def _status_now(now_label: str) -> None:
+    """Top block: quiet '当前状态' eyebrow + prominent '正在执行 xxx'."""
+    st.markdown(
+        '<div class="na-now"><div class="k">当前状态</div>'
+        f'<div class="v">{html.escape(now_label)}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _status_stats(view: dict) -> None:
+    """Bottom fixed block: 运行时间 + Token, plus Iteration as aux."""
+    secs, tok = _run_stats(view)
+    t_txt = f"{secs:.1f}s" if secs else "—"
+    k_txt = _fmt_tok(tok) if tok else "—"
+    st.markdown(
+        '<div class="na-stats"><div><div class="k">运行时间</div>'
+        f'<div class="v">{t_txt}</div></div>'
+        f'<div><div class="k">Token</div><div class="v">{k_txt}</div></div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _render_fixed_status(view: dict) -> None:
-    from note_agent.ui.state import PIPELINE
+    from note_agent.ui.state import PIPELINE, NODE_LABELS
 
-    it, mx = view["iteration"], view["max_iterations"]
-    st.markdown(f"**固定流程**  ·  {_status_running_flag(view)}", unsafe_allow_html=True)
-    st.caption(f"Iteration {it} / {mx}" if mx else "单遍生成（无核验循环）")
+    running = next((n["label"] for n in view["nodes"] if n["status"] == "running"), None)
+    if view["status"] == "done":
+        now = "已完成"
+    elif view["status"] == "error":
+        now = "运行出错"
+    else:
+        now = _clean(running) if running else "准备中"
+    _status_now(now)
 
+    st.markdown('<div class="na-eyebrow2">执行进度</div>', unsafe_allow_html=True)
     seen = {n["node"]: n["status"] for n in view["nodes"]}
     order = [k for k, _ in PIPELINE] + [
         n["node"] for n in view["nodes"] if n["node"] not in dict(PIPELINE)
@@ -121,32 +154,56 @@ def _render_fixed_status(view: dict) -> None:
     rows = []
     for node in dict.fromkeys(order):
         label = next((n["label"] for n in view["nodes"] if n["node"] == node), None)
-        from note_agent.ui.state import NODE_LABELS
-        label = label or NODE_LABELS.get(node, node)
+        label = _clean(label or NODE_LABELS.get(node, node))
         status = seen.get(node, "pending")
-        nd = next((n for n in view["nodes"] if n["node"] == node), {})
         rows.append(
             f'<div class="na-step {status}"><span class="ic">{_STEP_IC[status]}</span>'
-            f'<span>{html.escape(label)}{_step_metrics(nd)}</span></div>'
+            f'<span>{_STEP_WORD[status]}{html.escape(label)}</span></div>'
         )
     st.markdown("".join(rows), unsafe_allow_html=True)
 
+    if view["max_iterations"]:
+        st.markdown(
+            f'<div class="na-aux">Iteration: {view["iteration"]} / {view["max_iterations"]}</div>',
+            unsafe_allow_html=True,
+        )
+    _status_stats(view)
+
 
 def _render_react_status(view: dict) -> None:
-    st.markdown(f"**ReAct 自主**  ·  {_status_running_flag(view)}", unsafe_allow_html=True)
-    st.caption(f"Iteration {view['iteration']}")
-    if not view["react"]:
-        st.caption("Agent 正在启动…")
-        return
-    for i, step in enumerate(view["react"], 1):
-        blocks = [f'<div class="na-react-tag">Iteration {i}{_step_metrics(step)}</div>']
-        if step.get("think"):
-            blocks.append(f'<div><span class="na-react-tag">Think</span><br>{html.escape(step["think"])}</div>')
-        if step.get("act"):
-            blocks.append(f'<div><span class="na-react-tag">Act</span><br>{html.escape(step["act"])}</div>')
-        for obs in step.get("observe", []):
-            blocks.append(f'<div><span class="na-react-tag">Observe</span><br>{html.escape(obs)}</div>')
-        st.markdown(f'<div class="na-react-block">{"".join(blocks)}</div>', unsafe_allow_html=True)
+    steps = view["react"]
+    if view["status"] == "done":
+        now = "已完成"
+    elif view["status"] == "error":
+        now = "运行出错"
+    elif not steps:
+        now = "启动中"
+    else:
+        now = _clean(steps[-1].get("act") or steps[-1].get("think")) or "分析与决策"
+    _status_now(now)
+
+    last = steps[-1] if steps else {}
+    action = _clean(last.get("act")) or "分析与决策中"
+    # 最近决策: latest observation (outcome), else the reasoning phase.
+    decision = ""
+    for s in reversed(steps):
+        if s.get("observe"):
+            decision = _clean(s["observe"][-1])
+            break
+    decision = decision or _clean(last.get("think")) or "—"
+
+    st.markdown(
+        '<div class="na-field"><div class="k">当前动作</div>'
+        f'<div class="t">{html.escape(action)}</div></div>'
+        '<div class="na-field"><div class="k">最近决策</div>'
+        f'<div class="t">{html.escape(decision)}</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="na-aux">Iteration: {view["iteration"]}</div>',
+        unsafe_allow_html=True,
+    )
+    _status_stats(view)
 
 
 def status_panel(placeholder, view: dict) -> None:

@@ -6,13 +6,48 @@ from langgraph.prebuilt import ToolNode
 
 from note_agent.agent.prompts import react_system_prompt
 from note_agent.agent.tools import ALL_TOOLS
-from note_agent.config.llm import get_llm_for_provider
 from note_agent.domain.models import NoteResearchState
-from note_agent.io.events import emit_event
+from note_agent.io.events import emit_event, emit_node_start
+
+
+def _dedupe_sources(items: list) -> list:
+    """Dedupe sources that may be str OR dict (LLM sometimes returns dicts).
+
+    Order-preserving; dicts are keyed by their url/link/href or a stable repr,
+    so `set()` never chokes on an unhashable dict again.
+    """
+    seen: set[str] = set()
+    out: list = []
+    for it in items:
+        if isinstance(it, dict):
+            key = str(it.get("url") or it.get("link") or it.get("href") or sorted(it.items()))
+        else:
+            key = str(it)
+        if key and key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+
+def _agent_phase_label(state: NoteResearchState) -> str:
+    """Human-readable label for what the agent is about to decide."""
+    if not state.get("note_type"):
+        return "Agent 分析需求"
+    if not state.get("current_note"):
+        return "Agent 决策：生成初稿"
+    if not state.get("final_note"):
+        return "Agent 决策：检索 / 修正 / 最终化"
+    if not state.get("saved_path"):
+        return "Agent 决策：资产 / 保存"
+    return "Agent 收尾"
 
 
 def create_agent_node(state: NoteResearchState):
     """Agent reasoning node: decides which tool to call next."""
+
+    # Emit a node_start BEFORE the blocking invoke() so the UI shows the agent
+    # is reasoning (this call has no token streaming and can be slow).
+    emit_node_start("agent", _agent_phase_label(state))
 
     # Get LLM with tool binding (without stream_options for tool calls)
     from note_agent.config.settings import get_model
@@ -102,6 +137,24 @@ def create_tool_node(state: NoteResearchState):
     if not isinstance(last_message, AIMessage) or not last_message.tool_calls:
         return {"messages": []}
 
+    # Emit a node_start labeled with the tool(s) about to run so the UI stepper
+    # and token meter advance as the agent acts.
+    _TOOL_LABELS = {
+        "infer_note_structure": "🧭 推断结构",
+        "generate_note_draft": "✍️ 生成初稿",
+        "search_references": "📚 检索资料",
+        "refine_note_with_references": "🔬 核验修正",
+        "finalize_note_content": "✨ 最终化",
+        "plan_note_assets": "📐 规划资产",
+        "generate_note_assets": "🎨 生成资产",
+        "assemble_final_note": "🧩 组装笔记",
+        "save_final_note": "💾 保存笔记",
+        "publish_note_to_notion": "🚀 发布 Notion",
+    }
+    _names = [c.get("name", "") for c in last_message.tool_calls]
+    _label = " · ".join(_TOOL_LABELS.get(n, n) for n in _names) or "执行工具"
+    emit_node_start("tools", _label)
+
     # Inject system parameters into tool calls
     injected_message = AIMessage(
         content=last_message.content,
@@ -159,9 +212,9 @@ def create_tool_node(state: NoteResearchState):
                         current_queries.extend(tool_result["new_queries"])
                         state_updates["used_reference_queries"] = current_queries
                     if "sources" in tool_result:
-                        current_sources = state.get("sources", [])
-                        current_sources.extend(tool_result["sources"])
-                        state_updates["sources"] = list(set(current_sources))
+                        current_sources = list(state.get("sources", []))
+                        current_sources.extend(tool_result["sources"] or [])
+                        state_updates["sources"] = _dedupe_sources(current_sources)
                     if "final_note" in tool_result:
                         state_updates["final_note"] = tool_result["final_note"]
                     if "final_note_with_assets" in tool_result:

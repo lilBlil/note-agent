@@ -107,30 +107,3 @@ class TestNotionClientAppendBlocks:
             block_id="page_id_1",
             children=[{"object": "block"}],
         )
-
-
-class TestNotionClientSearchPages:
-    def test_returns_results(self, monkeypatch, mock_notion_sdk) -> None:
-        monkeypatch.setenv("NOTION_API_KEY", "secret")
-        monkeypatch.setenv("NOTION_PARENT_PAGE_ID", "p")
-
-        client = NotionClient()
-        client._client.search.return_value = {"results": [{"id": "1"}, {"id": "2"}]}
-        results = client.search_pages("query", limit=5)
-
-        assert len(results) == 2
-        client._client.search.assert_called_once_with(
-            query="query",
-            filter={"property": "object", "value": "page"},
-            page_size=5,
-        )
-
-    def test_returns_empty_list_when_no_results(self, monkeypatch, mock_notion_sdk) -> None:
-        monkeypatch.setenv("NOTION_API_KEY", "secret")
-        monkeypatch.setenv("NOTION_PARENT_PAGE_ID", "p")
-
-        client = NotionClient()
-        client._client.search.return_value = {}
-        results = client.search_pages("nonexistent")
-
-        assert results == []

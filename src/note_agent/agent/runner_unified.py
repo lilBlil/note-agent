@@ -22,25 +22,6 @@ def run_note_agent(request: NoteAgentRequest, mode: str = "fixed") -> NoteAgentR
         return run_fixed(request)
 
 
-def stream_note_agent(request: NoteAgentRequest, mode: str = "fixed"):
-    """
-    Stream note agent with specified mode.
-
-    Args:
-        request: Note agent request
-        mode: "fixed" for original fixed workflow, "react" for ReAct agent
-
-    Yields:
-        Node name, update dict, current state
-    """
-    if mode == "react":
-        from note_agent.agent.runner_react import stream_note_agent_react
-        yield from stream_note_agent_react(request)
-    else:
-        from note_agent.agent.runner import stream_note_agent as stream_fixed
-        yield from stream_fixed(request)
-
-
 def stream_note_agent_events(request: NoteAgentRequest, mode: str = "fixed"):
     """
     Stream note agent events with specified mode.

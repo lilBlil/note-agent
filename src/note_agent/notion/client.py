@@ -60,12 +60,3 @@ class NotionClient:
     ) -> None:
         """Append blocks to an existing page."""
         self._client.blocks.children.append(block_id=page_id, children=blocks)
-
-    def search_pages(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        """Search pages in the workspace."""
-        response = self._client.search(
-            query=query,
-            filter={"property": "object", "value": "page"},
-            page_size=limit,
-        )
-        return response.get("results", [])

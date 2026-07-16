@@ -10,6 +10,19 @@ from __future__ import annotations
 from note_agent.ui import render, state
 
 
+def _norm_sources(items: list) -> list:
+    """Order-preserving dedupe tolerant of str OR dict sources."""
+    seen: set[str] = set()
+    out: list = []
+    for it in items or []:
+        key = (it.get("url") or it.get("link") or str(sorted(it.items()))
+               if isinstance(it, dict) else str(it))
+        if key and key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out
+
+
 def build_combined_input(params: dict, view: dict):
     """Assemble the agent's raw_input from text + file bytes + fetched URLs."""
     from note_agent.io.input_loader import (
@@ -59,6 +72,14 @@ def _fold_event(view: dict, event: dict) -> None:
         # Fixed mode streams draft/finalize tokens; show them live.
         view["live_text"] += event.get("text", "")
 
+    elif etype == "progress":
+        # ReAct: whole note-so-far after each state; replace (not append).
+        note = event.get("note") or ""
+        if note:
+            view["live_text"] = note
+        if event.get("iteration_count") is not None:
+            view["iteration"] = event["iteration_count"]
+
     elif etype in ("info", "warning"):
         text = event.get("text", "")
         if mode == "react" and text:
@@ -67,7 +88,7 @@ def _fold_event(view: dict, event: dict) -> None:
     elif etype == "done":
         st_ = event.get("state", {})
         view["final_note"] = st_.get("final_note", "") or view.get("final_note", "")
-        view["sources"] = sorted(set(st_.get("sources", []) or []))
+        view["sources"] = _norm_sources(st_.get("sources", []) or [])
         view["usage"] = event.get("usage", {}) or view["usage"]
         view["run_id"] = event.get("run_id", "")
         view["run_log_dir"] = event.get("run_log_dir", "")

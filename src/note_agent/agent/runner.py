@@ -99,49 +99,6 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
         reset_event_handler(token)
 
 
-def stream_note_agent(request: NoteAgentRequest):
-    run_id = new_run_id()
-    initial_state = build_initial_state(request, run_id)
-
-    start_run(
-        run_id=run_id,
-        raw_input=request.raw_input,
-        llm_provider=request.llm_provider,
-        search_api=request.search_api,
-        max_iterations=request.max_iterations,
-        enable_assets=request.enable_assets,
-        enable_notion=request.enable_notion,
-    )
-
-    current_state = initial_state.copy()
-
-    try:
-        for event in get_graph().stream(initial_state, stream_mode="updates"):
-            for node_name, update in event.items():
-                current_state.update(update)
-                append_event(
-                    run_id,
-                    {
-                        "type": "node_update",
-                        "node_name": node_name,
-                        "update_keys": list(update.keys()),
-                    },
-                )
-                yield node_name, update, current_state
-
-        save_state_snapshot(run_id, current_state)
-        finish_run(
-            run_id=run_id,
-            status="success",
-            saved_path=current_state.get("saved_path", ""),
-            notion_url=current_state.get("notion_url", ""),
-        )
-        yield "done", {}, current_state
-    except Exception as e:
-        finish_run(run_id=run_id, status="error", error=str(e))
-        raise
-
-
 def stream_note_agent_events(request: NoteAgentRequest):
     run_id = new_run_id()
     initial_state = build_initial_state(request, run_id)
@@ -162,9 +119,14 @@ def stream_note_agent_events(request: NoteAgentRequest):
     def handler(event: dict):
         if stop.is_set():
             return
-        q.put(event)
         if event.get("type") != "token":
             append_event(run_id, event)
+        # Attach a cumulative token snapshot to structural events so the UI can
+        # show live usage. record_usage() runs in this same worker thread, so
+        # summarize_usage() reflects every LLM call completed so far.
+        if event.get("type") == "node_start":
+            event = {**event, "usage": summarize_usage()}
+        q.put(event)
 
     def run_graph():
         reset_usage()

@@ -1,6 +1,3 @@
-import re
-
-
 def react_system_prompt() -> str:
     return """你是一个智能研究笔记 Agent，使用 ReAct (Reasoning + Acting) 模式工作。
 
@@ -60,13 +57,6 @@ def react_system_prompt() -> str:
 
 完成所有步骤后，明确说明"任务完成"。
 """
-
-
-def _extract_headings(note: str) -> str:
-    return "\n".join(
-        line for line in note.splitlines()
-        if re.match(r"^#{1,3} ", line)
-    ) or "(无标题)"
 
 
 def infer_type_and_outline_prompt(raw_input: str) -> str:
@@ -195,95 +185,6 @@ source_types 说明：
     }}
   ]
 }}
-"""
-
-
-def verify_note_prompt(raw_input: str, current_note: str, references: str) -> str:
-    return f"""
-你是技术文档事实核验 Agent。对笔记中的事实性声明进行结构化审查。无论是否有参考信息，都必须完成以下检查。
-
-用户原始输入：
-{raw_input}
-
-当前笔记：
-{current_note}
-
-参考信息检索结果：
-{references}
-
-输出结构化核验报告，包含以下五部分：
-
-### 事实错误
-列出笔记中明显违背领域共识、技术规范或用户原始输入的事实性错误。格式：
-- 笔记原文摘要 → 错误说明
-（此项为知识核验，不依赖参考信息）
-
-### 自相矛盾
-检查笔记内部前后不一致或逻辑冲突。格式：
-- 位置A 的说法 → 位置B 的说法 → 矛盾说明
-
-### 事实冲突
-列出笔记中与参考信息检索结果明确矛盾的内容。格式：
-- 笔记原文摘要 → 参考信息说法 [来源编号]
-（如果没有参考信息，此部分写"无参考信息可供比对"）
-
-### 无据断言
-列出笔记中缺乏用户输入支撑的具体事实断言（通用领域知识和技术规范不算）。
-
-### 遗漏信息
-列出参考信息中满足以下全部条件的内容：
-1. 与笔记核心主题直接相关（非边缘扩展）
-2. 对理解该主题不可或缺
-3. 当前笔记完全未涉及
-格式：- 遗漏内容摘要 [来源编号]
-（如果没有参考信息，此部分写"无参考信息可供比对"）
-
-注意：参考信息中的延伸话题、相关但非核心的内容不算遗漏。
-
-如果某部分没有问题，写"无"。不要重写笔记。
-"""
-
-
-def refine_note_prompt(
-    raw_input: str,
-    current_note: str,
-    references: str,
-    verification_report: str,
-) -> str:
-    return f"""
-根据核验报告，以 patch 格式输出需要修改的章节内容，不要重写整篇笔记。
-
-用户输入：
-{raw_input}
-
-当前笔记章节标题列表（供定位用）：
-{_extract_headings(current_note)}
-
-参考信息：
-{references}
-
-核验报告：
-{verification_report}
-
-修正规则：
-1. 修正"事实错误"和"事实冲突"，以参考信息为准
-2. 消除"自相矛盾"，保留正确版本
-3. 删除或弱化"无据断言"中无法验证的具体断言
-4. 将"遗漏信息"中的关键内容整合到相应章节，句尾标注来源 [R1]
-
-输出格式（严格遵守）：
-- 每个修改块以 `### PATCH: <原章节标题>` 开头
-- 块内是该章节修改后的完整内容
-- 新增章节以 `### PATCH_NEW: <新章节标题> AFTER: <前一章节标题>` 开头
-- 如果核验报告所有项均为"无"，输出 `### NO_CHANGES`
-- 不要输出未修改的章节，不要输出解释
-
-示例：
-### PATCH: 核心概念
-（此章节修改后的完整内容）
-
-### PATCH_NEW: 实验结果补充 AFTER: 方法对比
-（新增章节的完整内容）
 """
 
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from note_agent.ui.runner_ui import _norm_sources
+
 _RUNS = Path("runs")
 
 
@@ -73,7 +75,7 @@ def load_view(run_id: str) -> dict | None:
         "iteration": snap.get("iteration_count", 0),
         "max_iterations": meta.get("max_iterations", 0),
         "live_text": "", "final_note": note,
-        "sources": sorted(set(snap.get("sources", []) or [])),
+        "sources": _norm_sources(snap.get("sources", []) or []),
         "usage": {}, "trace": [],
         "run_id": run_id, "run_log_dir": str(run_dir.resolve()),
         "error": meta.get("error", ""), "readonly": True,

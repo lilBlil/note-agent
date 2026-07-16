@@ -86,41 +86,41 @@ _MODE_LABELS = {"固定流程": "fixed", "ReAct 自主": "react"}
 
 def _current_mode() -> str:
     """Resolve mode from the persisted selector key (before its widget runs)."""
-    return _MODE_LABELS.get(st.session_state.get("na_mode", "固定流程"), "fixed")
+    return _MODE_LABELS.get(st.session_state.get("na_mode_sel", "固定流程"), "fixed")
 
 
 def _composer(settings: dict) -> None:
-    """ChatGPT-style box: textarea with mode selector + upload(+) + send(↑)
-    grouped inside, on the right. Send builds a pending view and reruns."""
+    """ChatGPT-style single-row pill: [+] upload · text · mode dropdown · [↑] send."""
     with st.container(key="na_composer"):
-        text = st.text_area(
-            "输入", key="na_text", height=76, label_visibility="collapsed",
-            placeholder="输入主题、粘贴文本，或添加文件与网站…",
-        )
-        with st.container(key="na_ctrlrow"):
-            # mode(left) · upload(+) · send(↑) — all on the right of the box.
-            spacer, c_mode, c_up, c_send = st.columns([6, 3, 1, 1],
-                                                      vertical_alignment="center")
-            with c_mode:
-                st.session_state.setdefault("na_mode", "固定流程")
-                st.segmented_control(
-                    "研究模式", list(_MODE_LABELS.keys()),
-                    key="na_mode", label_visibility="collapsed",
-                )
-            with c_up:
-                with st.popover("＋", use_container_width=True):
-                    files = st.file_uploader(
+        c_up, c_text, c_mode, c_send = st.columns(
+            [1, 11, 3, 1], vertical_alignment="center")
+        with c_up:
+            with st.container(key="na_up"):
+                with st.popover("＋"):
+                    st.file_uploader(
                         "添加文件（.txt / .md）", type=["txt", "md"],
                         accept_multiple_files=True, key="na_files",
                         label_visibility="collapsed",
                     )
                     st.caption("网站链接：直接粘贴到输入框，将自动识别。")
-            with c_send:
-                send = st.button("↑", key="na_send", use_container_width=True,
-                                 help="开始研究")
+        with c_text:
+            text = st.text_input(
+                "输入", key="na_text", label_visibility="collapsed",
+                placeholder="输入主题、粘贴文本，或添加文件与网站…",
+            )
+        with c_mode:
+            with st.container(key="na_mode"):
+                st.session_state.setdefault("na_mode_sel", "固定流程")
+                st.selectbox(
+                    "研究模式", list(_MODE_LABELS.keys()),
+                    key="na_mode_sel", label_visibility="collapsed",
+                )
+        with c_send:
+            with st.container(key="na_send"):
+                send = st.button("↑", help="开始研究")
 
     if send:
-        mode = _MODE_LABELS.get(st.session_state.get("na_mode", "固定流程"), "fixed")
+        mode = _MODE_LABELS.get(st.session_state.get("na_mode_sel", "固定流程"), "fixed")
         if _build_and_set_view(text, st.session_state.get("na_files") or [],
                                mode, settings):
             st.rerun()
