@@ -8,6 +8,7 @@ import xml.etree.ElementTree as ET
 import requests
 from ddgs import DDGS
 
+from note_agent.config.runtime import request_timeout
 from note_agent.domain.models import ReferenceItem, now_iso
 from note_agent.retrieval.cache import load_reference_cache, save_reference_cache
 
@@ -44,7 +45,12 @@ def _cached(source_name: str, query: str, max_results: int, loader):
     if cached is not None:
         return cached
     results = loader()
-    save_reference_cache(source_name=source_name, query=query, max_results=max_results, results=results)
+    save_reference_cache(
+        source_name=source_name,
+        query=query,
+        max_results=max_results,
+        results=results,
+    )
     return results
 
 
@@ -83,8 +89,13 @@ def retrieve_tavily(query: str, max_results: int = 5) -> list[ReferenceItem]:
             raise ValueError("TAVILY_API_KEY not found — check .env")
         response = requests.post(
             "https://api.tavily.com/search",
-            json={"api_key": api_key, "query": query, "search_depth": "basic", "max_results": max_results},
-            timeout=30,
+            json={
+                "api_key": api_key,
+                "query": query,
+                "search_depth": "basic",
+                "max_results": max_results,
+            },
+            timeout=request_timeout(),
         )
         response.raise_for_status()
         return [
@@ -116,12 +127,18 @@ def retrieve_perplexity(query: str, max_results: int = 5) -> list[ReferenceItem]
             json={
                 "model": "sonar",
                 "messages": [
-                    {"role": "system", "content": "You are a search assistant. Return factual search-based notes with source URLs."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a search assistant. Return factual search-based "
+                            "notes with source URLs."
+                        ),
+                    },
                     {"role": "user", "content": query},
                 ],
                 "max_tokens": 800,
             },
-            timeout=60,
+            timeout=request_timeout(30),
         )
         response.raise_for_status()
         data = response.json()
@@ -129,12 +146,27 @@ def retrieve_perplexity(query: str, max_results: int = 5) -> list[ReferenceItem]
         citations = [c for c in data.get("citations", []) if isinstance(c, str)]
         if citations:
             return [
-                ReferenceItem(query=query, title="Perplexity Search Result", snippet=content, url=url,
-                              source_type="web", source_name=source_name, retrieved_at=now_iso())
+                ReferenceItem(
+                    query=query,
+                    title="Perplexity Search Result",
+                    snippet=content,
+                    url=url,
+                    source_type="web",
+                    source_name=source_name,
+                    retrieved_at=now_iso(),
+                )
                 for url in citations[:max_results]
             ]
-        return [ReferenceItem(query=query, title="Perplexity Search Result", snippet=content,
-                              source_type="web", source_name=source_name, retrieved_at=now_iso())]
+        return [
+            ReferenceItem(
+                query=query,
+                title="Perplexity Search Result",
+                snippet=content,
+                source_type="web",
+                source_name=source_name,
+                retrieved_at=now_iso(),
+            )
+        ]
 
     return _cached(source_name, query, max_results, loader)
 
@@ -149,7 +181,7 @@ def retrieve_searxng(query: str, max_results: int = 5) -> list[ReferenceItem]:
         response = requests.get(
             f"{base_url.rstrip('/')}/search",
             params={"q": query, "format": "json"},
-            timeout=30,
+            timeout=request_timeout(),
         )
         response.raise_for_status()
         return [
@@ -184,7 +216,7 @@ def retrieve_semantic_scholar(query: str, max_results: int = 5) -> list[Referenc
             SEMANTIC_SCHOLAR_URL,
             params={"query": query, "limit": max_results, "fields": fields},
             headers=headers,
-            timeout=30,
+            timeout=request_timeout(),
         )
         response.raise_for_status()
         results = []
@@ -197,7 +229,11 @@ def retrieve_semantic_scholar(query: str, max_results: int = 5) -> list[Referenc
                     title=_clean_text(paper.get("title")),
                     abstract=_clean_text(paper.get("abstract")),
                     snippet=_clean_text(paper.get("abstract")),
-                    authors=[_clean_text(a.get("name")) for a in paper.get("authors", []) if a.get("name")],
+                    authors=[
+                        _clean_text(author.get("name"))
+                        for author in paper.get("authors", [])
+                        if author.get("name")
+                    ],
                     year=paper.get("year"),
                     venue=_clean_text(paper.get("venue")),
                     url=paper.get("url") or "",
@@ -222,7 +258,7 @@ def retrieve_arxiv(query: str, max_results: int = 5) -> list[ReferenceItem]:
             ARXIV_URL,
             params={"search_query": f"all:{query}", "start": 0, "max_results": max_results,
                     "sortBy": "relevance", "sortOrder": "descending"},
-            timeout=30,
+            timeout=request_timeout(),
         )
         response.raise_for_status()
         root = ET.fromstring(response.text)
@@ -263,7 +299,11 @@ def retrieve_google_books(query: str, max_results: int = 5) -> list[ReferenceIte
     source_name = "google_books"
 
     def loader():
-        response = requests.get(GOOGLE_BOOKS_URL, params={"q": query, "maxResults": max_results}, timeout=30)
+        response = requests.get(
+            GOOGLE_BOOKS_URL,
+            params={"q": query, "maxResults": max_results},
+            timeout=request_timeout(),
+        )
         response.raise_for_status()
         results = []
         for item in response.json().get("items", []) or []:
@@ -295,7 +335,11 @@ def retrieve_open_library(query: str, max_results: int = 5) -> list[ReferenceIte
     source_name = "open_library"
 
     def loader():
-        response = requests.get(OPEN_LIBRARY_URL, params={"q": query, "limit": max_results}, timeout=30)
+        response = requests.get(
+            OPEN_LIBRARY_URL,
+            params={"q": query, "limit": max_results},
+            timeout=request_timeout(),
+        )
         response.raise_for_status()
         results = []
         for item in response.json().get("docs", []) or []:
@@ -304,12 +348,20 @@ def retrieve_open_library(query: str, max_results: int = 5) -> list[ReferenceIte
             year = item.get("first_publish_year")
             results.append(
                 ReferenceItem(
-                    query=query, title=_clean_text(item.get("title")),
+                    query=query,
+                    title=_clean_text(item.get("title")),
                     authors=[_clean_text(a) for a in item.get("author_name", [])],
                     year=year if isinstance(year, int) else None,
-                    publisher=", ".join(item.get("publisher", [])[:3]) if item.get("publisher") else "",
-                    url=url, doi=(item.get("isbn", [""]) or [""])[0],
-                    source_type="book", source_name=source_name, retrieved_at=now_iso(),
+                    publisher=(
+                        ", ".join(item.get("publisher", [])[:3])
+                        if item.get("publisher")
+                        else ""
+                    ),
+                    url=url,
+                    doi=(item.get("isbn", [""]) or [""])[0],
+                    source_type="book",
+                    source_name=source_name,
+                    retrieved_at=now_iso(),
                 )
             )
         return dedupe_references(results)
@@ -321,7 +373,11 @@ def retrieve_openalex(query: str, max_results: int = 5) -> list[ReferenceItem]:
     source_name = "openalex"
 
     def loader():
-        response = requests.get(OPENALEX_URL, params={"search": query, "per-page": max_results}, timeout=30)
+        response = requests.get(
+            OPENALEX_URL,
+            params={"search": query, "per-page": max_results},
+            timeout=request_timeout(),
+        )
         response.raise_for_status()
         results = []
         for item in response.json().get("results", []) or []:

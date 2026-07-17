@@ -1,10 +1,10 @@
 import json
-import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
 from langgraph.graph import END, START, StateGraph
 
+from note_agent.agent.common import apply_patches, dedupe_urls, parse_note_structure
 from note_agent.assets.tools import (
     build_asset_markdown_items,
     filter_asset_plan,
@@ -15,14 +15,18 @@ from note_agent.assets.tools import (
     validate_generated_assets,
 )
 from note_agent.config.llm import ask_llm
+from note_agent.config.runtime import (
+    max_reference_queries,
+    max_results_per_source,
+    max_retrieval_workers,
+)
 from note_agent.io.events import emit_event, emit_node_start
-from note_agent.io.text import normalize_query, save_markdown
+from note_agent.io.text import derive_title, normalize_query, save_markdown
 from note_agent.agent.prompts import (
     finalize_note_prompt,
     generate_assets_prompt,
     generate_initial_note_prompt,
     generate_reference_queries_prompt,
-    generate_title_prompt,
     infer_type_and_outline_prompt,
     plan_assets_prompt,
     verify_and_refine_prompt,
@@ -39,41 +43,14 @@ from note_agent.notion import publish_note
 from note_agent.utils import extract_json_object, to_plain_data
 
 
-def _dedupe_urls(urls: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for url in urls:
-        url = (url or "").strip()
-        if url and url not in seen:
-            result.append(url)
-            seen.add(url)
-    return result
-
-
 def infer_type_and_outline(state: NoteResearchState):
     emit_node_start("infer_type_and_outline", "正在判断笔记类型并生成结构")
     text = ask_llm(
         infer_type_and_outline_prompt(state["raw_input"]),
         provider=state["llm_provider"],
-        stream=True,
+        stream=False,
     )
-    stripped = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=re.DOTALL)
-    try:
-        data = json.loads(stripped)
-    except Exception:
-        m = re.search(r"\{.*\}", stripped, re.DOTALL)
-        try:
-            data = json.loads(m.group()) if m else {}
-        except Exception:
-            data = {}
-
-    note_type = str(data.get("note_type") or "学习笔记").strip()
-    outline = data.get("outline") or [
-        {"title": "主题概述", "purpose": "概括主题背景和核心问题"},
-        {"title": "核心概念", "purpose": "整理关键概念"},
-        {"title": "实践要点", "purpose": "整理可操作内容"},
-        {"title": "后续问题", "purpose": "记录需要继续研究的问题"},
-    ]
+    note_type, outline = parse_note_structure(text)
     return {"note_type": note_type, "note_outline": outline}
 
 
@@ -129,7 +106,7 @@ def generate_reference_queries(state: NoteResearchState):
             used_queries=state.get("used_reference_queries", []),
         ),
         provider=state["llm_provider"],
-        stream=True,
+        stream=False,
     )
 
     data = extract_json_object(text)
@@ -168,8 +145,9 @@ def generate_reference_queries(state: NoteResearchState):
         used_query_texts.append(query)
         used.add(normalized)
 
-    reference_queries = reference_queries[:4]
-    used_query_texts = used_query_texts[:4]
+    query_limit = max_reference_queries()
+    reference_queries = reference_queries[:query_limit]
+    used_query_texts = used_query_texts[:query_limit]
 
     return {
         "reference_queries": reference_queries,
@@ -185,7 +163,11 @@ def retrieve_references_node(state: NoteResearchState):
 
     if not state["reference_queries"]:
         emit_event("info", text="本轮没有需要检索的参考信息。")
-        return {"reference_results": [], "evidence_items": evidence_items, "sources": _dedupe_urls(sources)}
+        return {
+            "reference_results": [],
+            "evidence_items": evidence_items,
+            "sources": dedupe_urls(sources),
+        }
 
     queries = []
     for item in state["reference_queries"]:
@@ -200,12 +182,16 @@ def retrieve_references_node(state: NoteResearchState):
     def fetch(rq: ReferenceQuery):
         emit_event("info", text=f"正在检索：{rq.query}；来源类型：{', '.join(rq.source_types)}")
         try:
-            return retrieve_references(rq, web_backend=state["search_api"], max_results_per_type=5)
+            return retrieve_references(
+                rq,
+                web_backend=state["search_api"],
+                max_results_per_type=max_results_per_source(),
+            )
         except Exception as e:
             emit_event("info", text=f"检索失败：{rq.query}；原因：{e}")
             return []
 
-    with ThreadPoolExecutor(max_workers=len(queries)) as pool:
+    with ThreadPoolExecutor(max_workers=min(len(queries), max_retrieval_workers())) as pool:
         futures = {pool.submit(fetch, rq): rq for rq in queries}
         for fut in as_completed(futures):
             results = fut.result()
@@ -217,7 +203,7 @@ def retrieve_references_node(state: NoteResearchState):
     return {
         "reference_results": current_round_results,
         "evidence_items": evidence_items,
-        "sources": _dedupe_urls(sources),
+        "sources": dedupe_urls(sources),
     }
 
 
@@ -237,7 +223,7 @@ def verify_and_refine(state: NoteResearchState):
         stream=True,
     )
 
-    new_note = _apply_patches(state["current_note"], patch_text)
+    new_note = apply_patches(state["current_note"], patch_text)
 
     intermediate_path = save_intermediate_note(
         state["run_id"],
@@ -253,62 +239,6 @@ def verify_and_refine(state: NoteResearchState):
         "verification_report": "",
         "intermediate_paths": state.get("intermediate_paths", []) + [intermediate_path],
     }
-
-
-def _apply_patches(current_note: str, patch_text: str) -> str:
-    """Apply LLM-generated PATCH blocks onto the current note."""
-    if "### NO_CHANGES" in patch_text:
-        return current_note
-
-    # Split note into sections keyed by heading
-    section_re = re.compile(r"^(#{1,3} .+)$", re.MULTILINE)
-    headings = [(m.group(1), m.start()) for m in section_re.finditer(current_note)]
-
-    def replace_section(note: str, heading: str, new_content: str) -> str:
-        idx = note.find(heading)
-        if idx == -1:
-            return note
-        # find next heading at same or higher level
-        level = len(heading.split(" ")[0])
-        after = idx + len(heading)
-        next_heading_re = re.compile(r"^#{1," + str(level) + r"} .+", re.MULTILINE)
-        m = next_heading_re.search(note, after + 1)
-        end = m.start() if m else len(note)
-        # Guard: the H1 title has no sibling, so a naive "same-or-higher level"
-        # boundary swallows the ENTIRE document, wiping every section below the
-        # title. When patching the title, bound the span at the first subheading
-        # so only the title's intro paragraph is replaced.
-        if level == 1 and m is None:
-            sub = re.compile(r"^#{2,6} .+", re.MULTILINE).search(note, after + 1)
-            if sub:
-                end = sub.start()
-        return note[:idx] + new_content.rstrip() + "\n\n" + note[end:]
-
-    # Parse patch blocks
-    patch_block_re = re.compile(
-        r"### (PATCH|PATCH_NEW): (.+?)(?: AFTER: (.+?))?\n(.*?)(?=### (?:PATCH|PATCH_NEW|NO_CHANGES)|$)",
-        re.DOTALL,
-    )
-    result = current_note
-    for m in patch_block_re.finditer(patch_text):
-        kind, heading, after_heading, content = m.group(1), m.group(2).strip(), (m.group(3) or "").strip(), m.group(4).strip()
-        if kind == "PATCH":
-            full_heading = next((h for h, _ in headings if heading in h), None)
-            if full_heading:
-                result = replace_section(result, full_heading, f"{full_heading}\n\n{content}")
-        elif kind == "PATCH_NEW":
-            insert_after = next((h for h, _ in headings if after_heading in h), None) if after_heading else None
-            new_block = f"\n\n## {heading}\n\n{content}"
-            if insert_after:
-                level = len(insert_after.split(" ")[0])
-                after_idx = result.find(insert_after)
-                next_m = re.compile(r"^#{1," + str(level) + r"} .+", re.MULTILINE).search(result, after_idx + len(insert_after) + 1)
-                pos = next_m.start() if next_m else len(result)
-                result = result[:pos] + new_block + "\n\n" + result[pos:]
-            else:
-                result = result.rstrip() + new_block
-    return result
-
 
 def route_iteration(state: NoteResearchState) -> str:
     if state["iteration_count"] >= state["max_iterations"]:
@@ -357,7 +287,7 @@ def plan_note_assets(state: NoteResearchState):
             note_type=state["note_type"],
         ),
         provider=state["llm_provider"],
-        stream=True,
+        stream=False,
     )
 
     plan_items = parse_asset_plan(text)
@@ -387,7 +317,7 @@ def generate_note_assets(state: NoteResearchState):
             asset_plan=asset_plan_text,
         ),
         provider=state["llm_provider"],
-        stream=True,
+        stream=False,
     )
 
     generated_assets = parse_generated_assets(text)
@@ -431,13 +361,9 @@ def assemble_assets_into_note(state: NoteResearchState):
 
 
 def save_markdown_node(state: NoteResearchState):
-    emit_node_start("save_markdown", "正在生成文件名并保存 Markdown")
+    emit_node_start("save_markdown", "正在保存 Markdown")
 
-    title = ask_llm(
-        generate_title_prompt(state["final_note"]),
-        provider=state["llm_provider"],
-        stream=True,
-    ).strip()
+    title = derive_title(state["final_note"])
 
     saved_path = save_markdown(title, state["final_note"])
 

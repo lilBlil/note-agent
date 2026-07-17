@@ -1,5 +1,7 @@
 """ReAct-based graph for note agent."""
 
+from functools import lru_cache
+
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
@@ -8,6 +10,16 @@ from note_agent.agent.prompts import react_system_prompt
 from note_agent.agent.tools import ALL_TOOLS
 from note_agent.domain.models import NoteResearchState
 from note_agent.io.events import emit_event, emit_node_start
+
+
+_TOOL_NODE = ToolNode(ALL_TOOLS)
+
+
+@lru_cache(maxsize=8)
+def _bound_tool_model(provider: str):
+    from note_agent.config.settings import get_model
+
+    return get_model(provider, for_tools=True).bind_tools(ALL_TOOLS)
 
 
 def _dedupe_sources(items: list) -> list:
@@ -48,11 +60,6 @@ def create_agent_node(state: NoteResearchState):
     # Emit a node_start BEFORE the blocking invoke() so the UI shows the agent
     # is reasoning (this call has no token streaming and can be slow).
     emit_node_start("agent", _agent_phase_label(state))
-
-    # Get LLM with tool binding (without stream_options for tool calls)
-    from note_agent.config.settings import get_model
-    llm = get_model(state["llm_provider"], for_tools=True)
-    llm_with_tools = llm.bind_tools(ALL_TOOLS)
 
     # Build context message for agent
     context_parts = []
@@ -99,7 +106,7 @@ def create_agent_node(state: NoteResearchState):
         messages = messages + [HumanMessage(content=context_msg)]
 
     # Call LLM
-    response = llm_with_tools.invoke(messages)
+    response = _bound_tool_model(state["llm_provider"]).invoke(messages)
 
     # Check if task is complete
     if not response.tool_calls:
@@ -175,9 +182,8 @@ def create_tool_node(state: NoteResearchState):
     # Replace last message with injected version
     injected_state = {**state, "messages": messages[:-1] + [injected_message]}
 
-    # Execute tools using ToolNode
-    tool_node = ToolNode(ALL_TOOLS)
-    result = tool_node.invoke(injected_state)
+    # Execute tools using the shared ToolNode.
+    result = _TOOL_NODE.invoke(injected_state)
 
     # Extract tool results and update state
     tool_messages = result.get("messages", [])
@@ -188,7 +194,11 @@ def create_tool_node(state: NoteResearchState):
         if isinstance(msg, ToolMessage):
             try:
                 import json
-                tool_result = json.loads(msg.content) if isinstance(msg.content, str) else msg.content
+                tool_result = (
+                    json.loads(msg.content)
+                    if isinstance(msg.content, str)
+                    else msg.content
+                )
 
                 # Update state based on tool results
                 if isinstance(tool_result, dict):
@@ -305,6 +315,6 @@ _react_graph = None
 def get_react_graph():
     """Get or create the ReAct graph singleton."""
     global _react_graph
-    # Force rebuild to pick up changes
-    _react_graph = build_react_graph()
+    if _react_graph is None:
+        _react_graph = build_react_graph()
     return _react_graph

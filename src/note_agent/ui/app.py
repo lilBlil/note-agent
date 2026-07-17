@@ -92,32 +92,38 @@ def _current_mode() -> str:
 def _composer(settings: dict) -> None:
     """ChatGPT-style single-row pill: [+] upload · text · mode dropdown · [↑] send."""
     with st.container(key="na_composer"):
-        c_up, c_text, c_mode, c_send = st.columns(
-            [1, 11, 3, 1], vertical_alignment="center")
-        with c_up:
-            with st.container(key="na_up"):
-                with st.popover("＋"):
-                    st.file_uploader(
-                        "添加文件（.txt / .md）", type=["txt", "md"],
-                        accept_multiple_files=True, key="na_files",
-                        label_visibility="collapsed",
-                    )
-                    st.caption("网站链接：直接粘贴到输入框，将自动识别。")
-        with c_text:
-            text = st.text_input(
-                "输入", key="na_text", label_visibility="collapsed",
-                placeholder="输入主题、粘贴文本，或添加文件与网站…",
-            )
-        with c_mode:
-            with st.container(key="na_mode"):
-                st.session_state.setdefault("na_mode_sel", "固定流程")
-                st.selectbox(
-                    "研究模式", list(_MODE_LABELS.keys()),
-                    key="na_mode_sel", label_visibility="collapsed",
+        with st.form(
+            "na_composer_form",
+            clear_on_submit=False,
+            enter_to_submit=True,
+            border=False,
+        ):
+            c_up, c_text, c_mode, c_send = st.columns(
+                [1, 11, 3, 1], vertical_alignment="center")
+            with c_up:
+                with st.container(key="na_up"):
+                    with st.popover("＋"):
+                        st.file_uploader(
+                            "添加文件（.txt / .md）", type=["txt", "md"],
+                            accept_multiple_files=True, key="na_files",
+                            label_visibility="collapsed",
+                        )
+                        st.caption("网站链接：直接粘贴到输入框，将自动识别。")
+            with c_text:
+                text = st.text_input(
+                    "输入", key="na_text", label_visibility="collapsed",
+                    placeholder="输入主题、粘贴文本，或添加文件与网站…",
                 )
-        with c_send:
-            with st.container(key="na_send"):
-                send = st.button("↑", help="开始研究")
+            with c_mode:
+                with st.container(key="na_mode"):
+                    st.session_state.setdefault("na_mode_sel", "固定流程")
+                    st.selectbox(
+                        "研究模式", list(_MODE_LABELS.keys()),
+                        key="na_mode_sel", label_visibility="collapsed",
+                    )
+            with c_send:
+                with st.container(key="na_send"):
+                    send = st.form_submit_button("↑", help="开始研究")
 
     if send:
         mode = _MODE_LABELS.get(st.session_state.get("na_mode_sel", "固定流程"), "fixed")

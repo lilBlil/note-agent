@@ -7,6 +7,8 @@
 .git
 .gitignore
 .github
+.agents/
+.claude/
 
 # --- python caches / build artifacts ---
 __pycache__/
@@ -19,6 +21,7 @@ build/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+*.log
 
 # --- generated runtime outputs (mounted as volumes instead) ---
 notes/
@@ -26,15 +29,18 @@ runs/
 .cache/
 .streamlit/secrets.toml
 
-# --- eval/benchmark artifacts ---
-tests/eval/benchmark_results/
-tests/eval/snapshots/*.new.txt
+# --- tests / eval artifacts ---
+tests/
 
 # --- editor / OS cruft ---
 .vscode/
 .idea/
 .DS_Store
-*.log
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
 
 # --- docs & local-only ---
 demos/

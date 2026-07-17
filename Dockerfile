@@ -12,8 +12,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Install deps first (cached layer) using only the lock + manifest.
-COPY pyproject.toml uv.lock ./
+# Install deps first (cached layer) using only metadata and the lock file.
+COPY pyproject.toml uv.lock README.md LICENSE ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project --no-dev --extra assets --extra notion
 
@@ -44,6 +44,8 @@ ENV PATH="/app/.venv/bin:$PATH" \
     STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
     STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_FILE_WATCHER_TYPE=none \
+    STREAMLIT_SERVER_RUN_ON_SAVE=false \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
 
 # Persisted outputs: notes, run logs and the retrieval cache.

@@ -11,7 +11,7 @@ from note_agent.io.input_loader import (
     read_text_file,
 )
 from note_agent.domain.api import NoteAgentRequest
-from note_agent.agent.runner_unified import run_note_agent
+from note_agent.agent.runner_unified import stream_note_agent_events
 
 
 load_dotenv()
@@ -136,6 +136,54 @@ def select_agent_mode() -> str:
     return mapping.get(choice, "fixed")
 
 
+def select_yes_no(prompt: str, default: bool = False) -> bool:
+    default_label = "Y/n" if default else "y/N"
+    raw = input(f"\n{prompt}（{default_label}）：\n> ").strip().lower()
+
+    if not raw:
+        return default
+    if raw in {"y", "yes", "是", "启用", "true", "1"}:
+        return True
+    if raw in {"n", "no", "否", "不", "false", "0"}:
+        return False
+
+    raise ValueError("请输入 y 或 n")
+
+
+def run_with_progress(request: NoteAgentRequest, mode: str):
+    print("\n运行配置：")
+    print(f"- 模式：{mode}")
+    print(f"- LLM：{request.llm_provider}")
+    print(f"- 检索：{request.search_api}")
+    print(f"- 迭代次数：{request.max_iterations}")
+    print(f"- 多资产生成：{'启用' if request.enable_assets else '关闭'}")
+    print(f"- Notion 发布：{'启用' if request.enable_notion else '关闭'}")
+    print("\n开始运行，下面会持续显示进度。LLM 请求较慢时，请等待当前步骤完成。\n")
+
+    for event in stream_note_agent_events(request, mode=mode):
+        event_type = event.get("type")
+
+        if event_type == "node_start":
+            print(f"[步骤] {event.get('step_label', event.get('node_name', ''))}")
+        elif event_type in {"info", "warning"}:
+            text = event.get("text")
+            if text:
+                print(f"[{event_type}] {text}")
+        elif event_type == "progress":
+            iteration = event.get("iteration_count")
+            if iteration is not None:
+                print(f"[进度] 当前迭代：{iteration}")
+        elif event_type == "error":
+            message = event.get("message") or event.get("text") or "未知错误"
+            print(f"[错误] {message}")
+            if event.get("fatal", True):
+                raise RuntimeError(message)
+        elif event_type == "done":
+            return event
+
+    raise RuntimeError("运行结束但没有收到完成事件")
+
+
 def main():
     print(f"Note Agent v{__version__}")
     print("-" * 50)
@@ -162,45 +210,52 @@ def main():
     provider = select_provider()
     search_api = select_search_api()
     mode = select_agent_mode()
+    enable_assets = select_yes_no("是否启用多资产生成（公式 / 代码 / 图表 / 流程图）")
+    enable_notion = select_yes_no("是否发布到 Notion")
 
     request = NoteAgentRequest(
         raw_input=raw_input,
         max_iterations=int(max_iterations),
         llm_provider=provider,
         search_api=search_api,
-        enable_assets=False,
+        enable_assets=enable_assets,
+        enable_notion=enable_notion,
     )
 
-    print(f"\n使用 {mode.upper()} 模式运行...")
-    response = run_note_agent(request, mode=mode)
+    result = run_with_progress(request, mode=mode)
+    state = result.get("state", {})
 
     print("\n最终笔记已保存：")
-    print(response.saved_path)
+    print(state.get("saved_path", ""))
 
     print("\n运行 ID：")
-    print(response.run_id)
+    print(result.get("run_id", state.get("run_id", "")))
 
     print("\n运行日志目录：")
-    print(response.run_log_dir)
+    print(result.get("run_log_dir", ""))
 
-    if response.intermediate_paths:
+    intermediate_paths = state.get("intermediate_paths", [])
+    if intermediate_paths:
         print("\n中间版本：")
-        for path in response.intermediate_paths:
+        for path in intermediate_paths:
             print(path)
 
-    if response.sources:
+    sources = state.get("sources", [])
+    if sources:
         print("\n参考来源：")
-        for source in response.sources:
+        for source in sources:
             print(source)
 
-    if response.asset_paths:
+    asset_paths = state.get("asset_paths", [])
+    if asset_paths:
         print("\n生成资产：")
-        for path in response.asset_paths:
+        for path in asset_paths:
             print(path)
 
-    if response.notion_url:
+    notion_url = state.get("notion_url", "")
+    if notion_url:
         print("\nNotion 页面：")
-        print(response.notion_url)
+        print(notion_url)
 
 
 if __name__ == "__main__":

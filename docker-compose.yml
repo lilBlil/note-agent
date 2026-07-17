@@ -1,11 +1,19 @@
 services:
   note-agent:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: note-agent:latest
+    init: true
     ports:
       - "8501:8501"
     env_file:
       - .env
+    environment:
+      MAX_REFERENCE_QUERIES: ${MAX_REFERENCE_QUERIES:-3}
+      MAX_RESULTS_PER_SOURCE: ${MAX_RESULTS_PER_SOURCE:-3}
+      MAX_RETRIEVAL_WORKERS: ${MAX_RETRIEVAL_WORKERS:-3}
+      REFERENCE_REQUEST_TIMEOUT: ${REFERENCE_REQUEST_TIMEOUT:-15}
     volumes:
       - ./notes:/app/notes
       - ./runs:/app/runs

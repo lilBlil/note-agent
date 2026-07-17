@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from functools import lru_cache
 
 from dotenv import load_dotenv
 from langchain_deepseek import ChatDeepSeek
@@ -36,6 +37,7 @@ MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
 }
 
 
+@lru_cache(maxsize=16)
 def get_model(provider: str = "deepseek", for_tools: bool = False):
     """
     Get LLM model instance.
@@ -68,3 +70,8 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
         temperature=0,
         model_kwargs=model_kwargs,
     )
+
+
+def clear_model_cache() -> None:
+    """Clear cached LangChain clients after changing environment variables."""
+    get_model.cache_clear()

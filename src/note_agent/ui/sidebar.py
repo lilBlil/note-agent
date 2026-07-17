@@ -17,11 +17,52 @@ from note_agent.ui.state import set_view
 _VISIBLE = 6
 
 
+def _delete_project(rid: str, active: str | None) -> None:
+    if history.delete_run(rid):
+        if rid == active:
+            set_view(None)
+            st.session_state.pop("na_sel", None)
+        st.rerun()
+
+
+@st.dialog("删除项目", width="small")
+def _confirm_delete_dialog(rid: str, name: str, active: str | None) -> None:
+    st.write(f"确定要删除「{name}」吗？")
+    st.caption("此操作会删除该项目的本地运行记录。")
+    c_cancel, c_delete = st.columns(2)
+    with c_cancel:
+        if st.button("取消", key=f"na_delete_cancel_{rid}", use_container_width=True):
+            st.rerun()
+    with c_delete:
+        if st.button("删除", key=f"na_delete_confirm_{rid}", use_container_width=True):
+            _delete_project(rid, active)
+
+
+@st.dialog("重命名项目", width="small")
+def _rename_dialog(rid: str, name: str) -> None:
+    new_name = st.text_input("项目名称", value=name, key=f"na_rename_dialog_input_{rid}")
+    c_cancel, c_save = st.columns(2)
+    with c_cancel:
+        if st.button("取消", key=f"na_rename_cancel_{rid}", use_container_width=True):
+            st.rerun()
+    with c_save:
+        if st.button("保存", key=f"na_rename_save_{rid}", use_container_width=True):
+            if history.rename_run(rid, new_name):
+                st.rerun()
+
+
+def _project_actions(rid: str, name: str, active: str | None) -> None:
+    if st.button("重命名", key=f"na_rename_{rid}", use_container_width=True):
+        _rename_dialog(rid, name)
+    if st.button("删除", key=f"na_delete_{rid}", use_container_width=True):
+        _confirm_delete_dialog(rid, name, active)
+
+
 def _project_row(r: dict, active: str | None) -> None:
     rid = r["run_id"]
-    label = (r["preview"] or rid).strip()[:44] or rid
-    # Selected row: wrap in a keyed container so CSS keeps it highlighted.
-    key_wrap = "na_active" if rid == active else f"na_row_{rid}"
+    name = (r["preview"] or rid).strip() or rid
+    label = name[:44]
+    key_wrap = f"na_project_row_active_{rid}" if rid == active else f"na_project_row_{rid}"
     with st.container(key=key_wrap):
         if st.button(label, key=f"hist_{rid}", use_container_width=True):
             loaded = history.load_view(rid)
@@ -29,6 +70,8 @@ def _project_row(r: dict, active: str | None) -> None:
                 set_view(loaded)
                 st.session_state["na_sel"] = rid
                 st.rerun()
+        with st.popover(" ", key=f"na_project_actions_{rid}", use_container_width=False):
+            _project_actions(rid, name, active)
 
 
 def _render_history() -> None:

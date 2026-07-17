@@ -23,6 +23,22 @@ def clean_filename(title: str) -> str:
     return title[:40] or "note"
 
 
+def derive_title(markdown: str, fallback: str = "Untitled Note") -> str:
+    """Derive a stable note title locally to avoid an extra LLM call."""
+    content = strip_markdown_fence(markdown)
+    for line in content.splitlines():
+        text = line.strip()
+        if text.startswith("# "):
+            return text[2:].strip() or fallback
+
+    for line in content.splitlines():
+        text = re.sub(r"^#+\s*", "", line).strip()
+        if text:
+            return text[:80]
+
+    return fallback
+
+
 def strip_markdown_fence(content: str) -> str:
     content = content.strip()
     if content.startswith("```markdown"):

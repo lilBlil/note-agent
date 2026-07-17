@@ -49,9 +49,61 @@ section[data-testid="stSidebar"] .stButton button [data-testid="stMarkdownContai
 section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .12rem !important; }
 section[data-testid="stSidebar"] .stButton { margin: 0 !important; }
 section[data-testid="stSidebar"] .stButton button:hover { background: var(--na-hover) !important; color: #fff !important; }
-section[data-testid="stSidebar"] .st-key-na_active button { background: var(--na-hover) !important; color: #fff !important; }
+section[data-testid="stSidebar"] [class*="st-key-na_project_row_active_"] [class*="st-key-hist_"] button { background: var(--na-hover) !important; color: #fff !important; }
 section[data-testid="stSidebar"] .st-key-na_newproj button { color: var(--na-muted) !important; }
 section[data-testid="stSidebar"] .st-key-na_newproj button:hover { color: #fff !important; }
+/* Project row actions: no-box arrow trigger + fixed-width floating menu. */
+section[data-testid="stSidebar"] [class*="st-key-na_project_row_"] {
+  position: relative !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_project_row_"] [class*="st-key-hist_"] button {
+  padding-right: 2rem !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_rename_"] button,
+section[data-testid="stSidebar"] [class*="st-key-na_delete_"] button {
+  min-height: 34px !important; height: 34px !important;
+  padding: 0 .65rem !important; justify-content: flex-start !important;
+  text-align: left !important; font-size: .9rem !important;
+  color: var(--na-text) !important; border-radius: 6px !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_project_actions_"] {
+  position: absolute !important; right: .45rem !important; top: .2rem !important;
+  width: 24px !important; min-width: 24px !important; max-width: 24px !important;
+  z-index: 30 !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_project_actions_"] button {
+  background: transparent !important; border: none !important; box-shadow: none !important;
+  color: var(--na-muted) !important; min-height: 24px !important; height: 24px !important;
+  width: 24px !important; padding: 0 !important; justify-content: center !important;
+  text-align: center !important; border-radius: 0 !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_project_actions_"] button:hover {
+  background: transparent !important; color: #fff !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_project_actions_"] button [data-testid="stMarkdownContainer"] {
+  display: none !important;
+}
+div[data-testid="stPopoverBody"]:has([class*="st-key-na_rename_"]),
+div[data-testid="stPopoverBody"]:has([class*="st-key-na_delete_"]) {
+  min-width: 156px !important; max-width: 156px !important;
+  padding: .42rem !important; background: #343434 !important;
+  border: none !important; border-radius: 8px !important;
+  box-shadow: 0 12px 30px rgba(0,0,0,.38) !important;
+}
+div[data-testid="stPopoverBody"] [class*="st-key-na_rename_"] button,
+div[data-testid="stPopoverBody"] [class*="st-key-na_delete_"] button {
+  width: 100% !important; opacity: 1 !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_delete_"] button,
+[class*="st-key-na_delete_"] button,
+[class*="st-key-na_delete_confirm_"] button {
+  color: var(--na-err) !important;
+}
+section[data-testid="stSidebar"] [class*="st-key-na_delete_"] button:hover,
+[class*="st-key-na_delete_"] button:hover,
+[class*="st-key-na_delete_confirm_"] button:hover {
+  background: rgba(224, 96, 94, .14) !important; color: #ff8583 !important;
+}
 /* '更多项目' expander: flat, borderless, matches the list. */
 section[data-testid="stSidebar"] .stExpander { border: none !important; background: transparent !important; }
 section[data-testid="stSidebar"] .stExpander summary { padding: .34rem .55rem !important; color: var(--na-muted) !important; font-size: .95rem !important; justify-content: flex-start !important; }
@@ -77,6 +129,9 @@ _CSS_INPUT = """
   box-shadow: 0 2px 20px rgba(0,0,0,.35);
 }
 .st-key-na_composer:focus-within { border-color: #3a3d44; }
+.st-key-na_composer [data-testid="stForm"] {
+  border: none !important; padding: 0 !important;
+}
 .st-key-na_composer [data-testid="stHorizontalBlock"] { align-items: center; gap: .2rem; }
 
 /* Single-line text input inside the box: transparent, borderless. */
@@ -119,7 +174,7 @@ _CSS_COMPOSER_CTRL = """
 /* Send: white circle, black arrow. */
 .st-key-na_send button {
   border-radius: 999px !important; min-height: 40px !important; height: 40px !important;
-  width: 40px !important; padding: 0 !important; font-size: 1.15rem !important;
+  width: 40px !important; padding: 0 !important; font-size: 1.4rem !important;
   background: var(--na-text) !important; border: none !important; color: #111 !important;
 }
 .st-key-na_send button:hover { background: #fff !important; }
