@@ -43,6 +43,9 @@ from note_agent.notion import publish_note
 from note_agent.utils import extract_json_object, to_plain_data
 
 
+_apply_patches = apply_patches
+
+
 def infer_type_and_outline(state: NoteResearchState):
     emit_node_start("infer_type_and_outline", "正在判断笔记类型并生成结构")
     text = ask_llm(

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from note_agent.agent.prompts import (
     finalize_note_prompt,

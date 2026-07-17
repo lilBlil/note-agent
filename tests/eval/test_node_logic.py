@@ -19,7 +19,6 @@ import json
 import pytest
 
 from note_agent.agent.graph import (
-    _apply_patches,
     build_graph,
     finalize_note,
     generate_initial_note,
@@ -36,7 +35,7 @@ from note_agent.agent.graph import (
     save_markdown_node,
     verify_and_refine,
 )
-from note_agent.domain.models import NoteResearchState, ReferenceQuery, ReferenceItem
+from note_agent.domain.models import ReferenceItem
 
 from tests.eval.conftest import mock_ask_llm_sequence, mock_graph_io, mock_entire_pipeline
 
@@ -256,7 +255,7 @@ class TestRetrieveReferences:
 
     def test_with_real_reference_query(self, base_state) -> None:
         """Integration with actual retrieve_references (mocked)."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
 
         base_state["reference_queries"] = [
             {"query": "test", "source_types": ["web"], "reason": "test"}
@@ -274,7 +273,7 @@ class TestRetrieveReferences:
                         source_name="Example",
                     )
                 ],
-            ) as mock_retrieve, \
+            ), \
             patch(
                 "note_agent.agent.graph.collect_reference_urls",
                 return_value=["https://example.com"],
@@ -403,19 +402,18 @@ class TestGenerateAssets:
 class TestSaveAndPublish:
     def test_save_markdown_generates_title(self, base_state) -> None:
         base_state["final_note"] = "# CAP Theorem Detailed Explanation\n\nContent."
-        with mock_entire_pipeline(["CAP定理详解"]):
-            with pytest.MonkeyPatch.context() as mp:
-                mp.setattr("note_agent.agent.graph.save_markdown", lambda t, c: "/tmp/test.md")
-                mp.setattr("note_agent.agent.graph.append_event", lambda rid, ev: None)
-                result = save_markdown_node(base_state)
-        assert result["note_title"] == "CAP定理详解"
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("note_agent.agent.graph.save_markdown", lambda t, c: "/tmp/test.md")
+            mp.setattr("note_agent.agent.graph.append_event", lambda rid, ev: None)
+            result = save_markdown_node(base_state)
+        assert result["note_title"] == "CAP Theorem Detailed Explanation"
 
     def test_publish_notion_extracts_title(self, base_state) -> None:
         base_state["note_title"] = ""
         base_state["final_note"] = "# My Note Title\n\nContent."
         from unittest.mock import patch
         with mock_graph_io():
-            with patch("note_agent.agent.graph.publish_note", return_value="https://notion.so/page") as mock_pub, \
+            with patch("note_agent.agent.graph.publish_note", return_value="https://notion.so/page"), \
                  patch("note_agent.agent.graph.append_event"):
                 result = publish_notion_node(base_state)
         assert result["notion_url"] == "https://notion.so/page"

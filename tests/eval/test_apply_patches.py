@@ -8,7 +8,6 @@ It MUST be correct because downstream nodes depend on its output.
 
 from __future__ import annotations
 
-import pytest
 
 from note_agent.agent.graph import _apply_patches
 
@@ -125,7 +124,7 @@ class TestPatchNew:
         assert "## 附录" in result
         assert "附录内容" in result
         # Appended at end — the last non-empty line should be the content
-        last_lines = [l for l in result.splitlines() if l.strip()]
+        last_lines = [line for line in result.splitlines() if line.strip()]
         assert "附录内容" in last_lines[-1]
 
     def test_insert_after_first(self) -> None:

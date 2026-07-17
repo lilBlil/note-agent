@@ -45,13 +45,13 @@ def _check_markdown_structure(note: str) -> dict[str, str | bool]:
         issues["has_markdown_fence"] = "Output is wrapped in a markdown code fence"
 
     lines = note.splitlines()
-    h1_count = sum(1 for l in lines if re.match(r"^# ", l))
+    h1_count = sum(1 for line in lines if re.match(r"^# ", line))
     if h1_count == 0:
         issues["no_h1"] = "No top-level heading (^# ) found"
     elif h1_count > 1:
         issues["multiple_h1"] = f"Multiple top-level headings: {h1_count}"
 
-    h2_count = sum(1 for l in lines if re.match(r"^## ", l))
+    h2_count = sum(1 for line in lines if re.match(r"^## ", line))
     if h2_count == 0:
         issues["no_h2"] = "No second-level headings — content may be unstructured"
 
@@ -72,7 +72,6 @@ def _check_assets_coverage(note: str, case: dict) -> dict[str, str]:
     issues = {}
     has_formula = "$$" in note or "\\(" in note
     has_code = "```" in note
-    has_mermaid = "```mermaid" in note.lower()
 
     if case["needs_assets"]:
         dims = case.get("dimensions", [])
@@ -150,7 +149,7 @@ class TestE2ENodeLevel:
         assert data is not None, f"Failed to parse JSON from LLM response:\n{text[:500]}"
         assert "note_type" in data, f"Missing 'note_type' in response: {list(data.keys())}"
         assert "outline" in data, f"Missing 'outline' in response: {list(data.keys())}"
-        assert isinstance(data["outline"], list), f"'outline' is not a list"
+        assert isinstance(data["outline"], list), "'outline' is not a list"
         assert len(data["outline"]) > 0, "Outline is empty"
         for item in data["outline"]:
             assert "title" in item, f"Outline item missing 'title': {item}"
@@ -179,12 +178,12 @@ class TestE2ENodeLevel:
                            "\n".join(f"  - {k}: {v}" for k, v in issues.items())
 
         # Check minimum sections
-        h2_count = sum(1 for l in text2.splitlines() if re.match(r"^## ", l))
+        h2_count = sum(1 for line in text2.splitlines() if re.match(r"^## ", line))
         assert h2_count >= case.get("min_sections", 2), \
             f"Only {h2_count} sections, expected at least {case['min_sections']}"
 
         # Title should be present and meaningful
-        h1 = [l for l in text2.splitlines() if re.match(r"^# ", l)]
+        h1 = [line for line in text2.splitlines() if re.match(r"^# ", line)]
         assert h1, "No top-level heading"
         title_text = h1[0].lstrip("# ").strip()
         assert len(title_text) >= 2, f"Title too short: '{title_text}'"
@@ -230,7 +229,7 @@ class TestE2EFullPipeline:
         assert final, "final_note is empty"
 
         issues = _check_markdown_structure(final)
-        assert not issues, f"Markdown issues:\n" + \
+        assert not issues, "Markdown issues:\n" + \
                            "\n".join(f"  - {k}: {v}" for k, v in issues.items())
 
         # Key terms

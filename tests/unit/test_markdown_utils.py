@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from note_agent.io.text import clean_filename, strip_markdown_fence
 
@@ -57,7 +56,7 @@ class TestStripMarkdownFence:
 
     def test_jumps_to_first_heading(self) -> None:
         content = "intro text\n# Real Title\nBody"
-        result = strip_markdown_fence("```markdown\nintro text\n# Real Title\nBody\n```")
+        result = strip_markdown_fence(f"```markdown\n{content}\n```")
         assert result.startswith("# Real Title")
 
     def test_no_heading_preserves_all(self) -> None:
