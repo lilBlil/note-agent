@@ -102,7 +102,7 @@ def _render_settings(mode: str) -> dict:
     st.markdown("### 设置")
     llm = st.selectbox(
         "LLM 供应商",
-        ["deepseek", "openai", "qwen", "moonshot", "zhipu", "siliconflow"],
+        ["deepseek", "openai", "anthropic", "qwen", "moonshot", "zhipu", "siliconflow"],
         index=0,
     )
     search = st.selectbox(

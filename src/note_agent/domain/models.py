@@ -12,7 +12,15 @@ from pydantic import BaseModel, Field
 
 ReferenceType = Literal["web", "paper", "book", "academic", "other"]
 
-LLMProvider = Literal["deepseek", "openai", "qwen", "moonshot", "zhipu", "siliconflow"]
+LLMProvider = Literal[
+    "deepseek",
+    "openai",
+    "anthropic",
+    "qwen",
+    "moonshot",
+    "zhipu",
+    "siliconflow",
+]
 
 SearchAPI = Literal["duckduckgo", "tavily", "perplexity", "searxng"]
 

@@ -57,6 +57,10 @@ class TestNoteAgentRequest:
         req = NoteAgentRequest(raw_input="hello")
         assert req.raw_input == "hello"
 
+    def test_anthropic_provider_is_valid(self) -> None:
+        req = NoteAgentRequest(raw_input="hello", llm_provider="anthropic")
+        assert req.llm_provider == "anthropic"
+
 
 class TestBuildBaseState:
     def test_contains_shared_defaults(self) -> None:

@@ -5,7 +5,7 @@ Note Agent 是一个基于 LangGraph 和 LangChain 的研究笔记生成工具�
 ## 功能概览
 
 - 输入：主题、长文本、`.txt` / `.md` 文件、网页 URL
-- 模型：DeepSeek、OpenAI、Qwen、Moonshot、Zhipu、SiliconFlow
+- 模型：DeepSeek、OpenAI、Anthropic、Qwen、Moonshot、Zhipu、SiliconFlow
 - 检索：DuckDuckGo、Tavily、Perplexity、SearXNG
 - 模式：固定工作流、ReAct Agent
 - 输出：Markdown 笔记、中间版本、运行日志、参考资料缓存
@@ -103,10 +103,13 @@ CLI 会依次询问输入内容、文件路径、网页 URL、迭代次数、LLM
 |----------|----------|----------|
 | `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-pro` |
 | `openai` | `OPENAI_API_KEY` | `gpt-4o` |
+| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | `qwen` | `DASHSCOPE_API_KEY` | `qwen-max` |
 | `moonshot` | `MOONSHOT_API_KEY` | `moonshot-v1-128k` |
 | `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` |
 | `siliconflow` | `SILICONFLOW_API_KEY` | `deepseek-ai/DeepSeek-V3` |
+
+模型可用性还取决于对应账号的模型权限、额度、地区和供应商当前 API 状态；如果供应商下线或改名某个模型，请在 `src/note_agent/config/settings.py` 中更新默认模型。
 
 ### 检索
 

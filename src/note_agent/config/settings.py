@@ -6,6 +6,7 @@ import os
 from functools import lru_cache
 
 from dotenv import load_dotenv
+from langchain_anthropic import ChatAnthropic
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
 
@@ -14,6 +15,11 @@ load_dotenv()
 MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
     "deepseek": {"model": "deepseek-v4-pro", "api_key_env": "DEEPSEEK_API_KEY", "base_url": None},
     "openai": {"model": "gpt-4o", "api_key_env": "OPENAI_API_KEY", "base_url": None},
+    "anthropic": {
+        "model": "claude-sonnet-4-20250514",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "base_url": None,
+    },
     "qwen": {
         "model": "qwen-max",
         "api_key_env": "DASHSCOPE_API_KEY",
@@ -62,6 +68,12 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
             api_key=api_key,
             temperature=0,
             model_kwargs=model_kwargs,
+        )
+    if provider == "anthropic":
+        return ChatAnthropic(
+            model=str(cfg["model"]),
+            api_key=api_key,
+            temperature=0,
         )
     return ChatOpenAI(
         model=str(cfg["model"]),
