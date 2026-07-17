@@ -2,14 +2,49 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from note_agent.domain.models import ReferenceItem, ReferenceQuery
 from note_agent.retrieval.sources import retrieve_by_source_type, dedupe_references
+from note_agent.io.events import emit_event
+
+FailureHandler = Callable[[dict[str, Any]], None]
+
+
+def _record_retrieval_failure(
+    *,
+    reference_query: ReferenceQuery,
+    source_type: str,
+    web_backend: str,
+    error: Exception,
+    on_failure: FailureHandler | None = None,
+) -> None:
+    source_name = web_backend if source_type == "web" else source_type
+    payload = {
+        "query": reference_query.query,
+        "source_type": source_type,
+        "source_name": source_name,
+        "error_type": type(error).__name__,
+        "error": str(error),
+    }
+    emit_event(
+        "warning",
+        text=(
+            "Reference retrieval failed: "
+            f"{source_name} ({source_type}) for query {reference_query.query}: {error}"
+        ),
+        failed_source=payload,
+    )
+    if on_failure:
+        on_failure(payload)
 
 
 def retrieve_references(
     reference_query: ReferenceQuery,
     web_backend: str = "duckduckgo",
     max_results_per_type: int = 5,
+    on_failure: FailureHandler | None = None,
 ) -> list[ReferenceItem]:
     results: list[ReferenceItem] = []
     source_types = reference_query.source_types or ["web", "academic"]
@@ -22,9 +57,17 @@ def retrieve_references(
                     source_type,
                     web_backend=web_backend,
                     max_results=max_results_per_type,
+                    on_failure=on_failure,
                 )
             )
-        except Exception:
+        except Exception as e:
+            _record_retrieval_failure(
+                reference_query=reference_query,
+                source_type=source_type,
+                web_backend=web_backend,
+                error=e,
+                on_failure=on_failure,
+            )
             continue
 
     return dedupe_references(results)

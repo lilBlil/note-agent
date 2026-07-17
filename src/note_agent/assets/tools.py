@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 from note_agent.assets.types import (
     AssetPlanItem,
@@ -13,6 +14,7 @@ from note_agent.assets.types import (
     GeneratedAssets,
     MermaidBlock,
 )
+from note_agent.io.events import emit_event
 from note_agent.io.storage import get_assets_dir, write_json
 from note_agent.utils import extract_json_array_or_object
 
@@ -25,15 +27,44 @@ LANGUAGE_EXTENSIONS: dict[str, str] = {
 }
 
 
-def parse_asset_plan(text: str) -> list[AssetPlanItem]:
+def _record_asset_error(
+    errors: list[dict[str, Any]] | None,
+    *,
+    stage: str,
+    error: Exception | str,
+    **extra: Any,
+) -> None:
+    payload = {
+        "stage": stage,
+        "error_type": type(error).__name__ if isinstance(error, Exception) else "AssetError",
+        "error": str(error),
+        **extra,
+    }
+    emit_event("warning", text=f"Asset {stage} failed: {error}", asset_error=payload)
+    if errors is not None:
+        errors.append(payload)
+
+
+def parse_asset_plan(
+    text: str,
+    errors: list[dict[str, Any]] | None = None,
+) -> list[AssetPlanItem]:
     try:
         data = extract_json_array_or_object(text)
         if isinstance(data, dict):
+            if "assets" not in data:
+                _record_asset_error(
+                    errors,
+                    stage="parse_asset_plan",
+                    error="expected an assets key or a JSON list",
+                )
             data = data.get("assets", [])
         if not isinstance(data, list):
+            _record_asset_error(errors, stage="parse_asset_plan", error="expected a JSON list")
             return []
         return [AssetPlanItem(**item) for item in data if isinstance(item, dict)]
-    except Exception:
+    except Exception as e:
+        _record_asset_error(errors, stage="parse_asset_plan", error=e)
         return []
 
 
@@ -62,11 +93,15 @@ def filter_asset_plan(
     return filtered
 
 
-def parse_generated_assets(text: str) -> GeneratedAssets:
+def parse_generated_assets(
+    text: str,
+    errors: list[dict[str, Any]] | None = None,
+) -> GeneratedAssets:
     try:
         data = extract_json_array_or_object(text)
         return GeneratedAssets(**data) if isinstance(data, dict) else GeneratedAssets()
-    except Exception:
+    except Exception as e:
+        _record_asset_error(errors, stage="parse_generated_assets", error=e)
         return GeneratedAssets()
 
 
@@ -142,12 +177,17 @@ def save_chart_specs(run_id: str, charts: list[ChartBlock]) -> list[str]:
     return saved
 
 
-def render_chart_images(run_id: str, charts: list[ChartBlock]) -> list[str]:
+def render_chart_images(
+    run_id: str,
+    charts: list[ChartBlock],
+    errors: list[dict[str, Any]] | None = None,
+) -> list[str]:
     if not charts:
         return []
     try:
         import matplotlib.pyplot as plt
-    except Exception:
+    except Exception as e:
+        _record_asset_error(errors, stage="render_chart_images", error=e)
         return []
 
     assets_dir = get_assets_dir(run_id)
@@ -157,33 +197,43 @@ def render_chart_images(run_id: str, charts: list[ChartBlock]) -> list[str]:
             continue
         cid = _safe_name(chart.chart_id, f"chart_{idx:03d}")
         p = assets_dir / f"{cid}.png"
-        fig, ax = plt.subplots(figsize=(8, 4.5))
-        for series in chart.series:
-            if not series.x or not series.y:
-                continue
-            if chart.chart_type == "bar":
-                ax.bar(series.x, series.y, label=series.label or None)
-            else:
-                ax.plot(series.x, series.y, marker="o", label=series.label or None)
-        ax.set_title(chart.title or cid)
-        ax.set_xlabel(chart.x_label or "")
-        ax.set_ylabel(chart.y_label or "")
-        if any(s.label for s in chart.series):
-            ax.legend()
-        fig.tight_layout()
-        fig.savefig(p, dpi=160)
-        plt.close(fig)
-        saved.append(str(p.resolve()))
+        fig = None
+        try:
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+            for series in chart.series:
+                if not series.x or not series.y:
+                    continue
+                if chart.chart_type == "bar":
+                    ax.bar(series.x, series.y, label=series.label or None)
+                else:
+                    ax.plot(series.x, series.y, marker="o", label=series.label or None)
+            ax.set_title(chart.title or cid)
+            ax.set_xlabel(chart.x_label or "")
+            ax.set_ylabel(chart.y_label or "")
+            if any(s.label for s in chart.series):
+                ax.legend()
+            fig.tight_layout()
+            fig.savefig(p, dpi=160)
+            saved.append(str(p.resolve()))
+        except Exception as e:
+            _record_asset_error(errors, stage="render_chart_images", error=e, chart_id=cid)
+        finally:
+            if fig is not None:
+                plt.close(fig)
     return saved
 
 
-def save_generated_assets(run_id: str, assets: GeneratedAssets) -> list[str]:
+def save_generated_assets(
+    run_id: str,
+    assets: GeneratedAssets,
+    errors: list[dict[str, Any]] | None = None,
+) -> list[str]:
     saved: list[str] = []
     saved.extend(save_formula_assets(run_id, assets.formulas))
     saved.extend(save_code_assets(run_id, assets.code_blocks))
     saved.extend(save_mermaid_assets(run_id, assets.diagrams))
     saved.extend(save_chart_specs(run_id, assets.charts))
-    saved.extend(render_chart_images(run_id, assets.charts))
+    saved.extend(render_chart_images(run_id, assets.charts, errors=errors))
     return saved
 
 

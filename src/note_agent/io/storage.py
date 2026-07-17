@@ -90,7 +90,9 @@ _SNAPSHOT_KEYS = (
     "run_id", "note_type", "max_iterations", "enable_assets",
     "iteration_count", "llm_provider", "search_api",
     "reference_queries", "used_reference_queries", "sources",
+    "failed_sources",
     "saved_path", "notion_url", "intermediate_paths", "asset_paths", "asset_plan",
+    "asset_errors",
 )
 _SNAPSHOT_TEXT_KEYS = ("current_note", "verification_report", "final_note")
 _TEXT_PREVIEW_LIMIT = 1000

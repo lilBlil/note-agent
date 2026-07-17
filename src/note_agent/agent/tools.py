@@ -179,7 +179,7 @@ def search_references(
 
     if not reference_queries:
         emit_event("info", text="✅ 未发现新的信息缺口")
-        return {"reference_results": [], "new_queries": [], "sources": []}
+        return {"reference_results": [], "new_queries": [], "sources": [], "failed_sources": []}
 
     # 执行检索
     emit_event("info", text=f"🌐 开始检索 {len(reference_queries)} 个查询")
@@ -187,35 +187,49 @@ def search_references(
     lock = Lock()
     all_results = []
     all_sources = []
+    failed_sources = []
 
     def fetch(rq: ReferenceQuery):
+        failures = []
         emit_event("info", text=f"  📡 检索：{rq.query} ({', '.join(rq.source_types)})")
         try:
-            return retrieve_references(
+            results = retrieve_references(
                 rq,
                 web_backend=search_api,
                 max_results_per_type=max_results_per_source(),
+                on_failure=failures.append,
             )
+            return results, failures
         except Exception as e:
+            failure = {
+                "query": rq.query,
+                "source_type": ",".join(rq.source_types),
+                "source_name": search_api,
+                "error_type": type(e).__name__,
+                "error": str(e),
+            }
+            emit_event("warning", text=f"Reference retrieval failed: {rq.query}: {e}", failed_source=failure)
             emit_event("info", text=f"  ⚠️ 检索失败：{rq.query} - {e}")
-            return []
+            return [], [failure]
 
     with ThreadPoolExecutor(
         max_workers=min(len(reference_queries), max_retrieval_workers())
     ) as pool:
         futures = {pool.submit(fetch, rq): rq for rq in reference_queries}
         for fut in as_completed(futures):
-            results = fut.result()
+            results, failures = fut.result()
             with lock:
                 all_results.extend(results)
                 all_sources.extend(collect_reference_urls(results))
+                failed_sources.extend(failures)
 
     emit_event("info", text=f"✅ 检索完成，共获取 {len(all_results)} 条参考信息")
 
     return {
         "reference_results": [to_plain_data(r) for r in all_results],
         "new_queries": new_query_texts,
-        "sources": dedupe_urls(all_sources)
+        "sources": dedupe_urls(all_sources),
+        "failed_sources": failed_sources,
     }
 
 
@@ -337,13 +351,14 @@ def plan_note_assets(
         stream=False,
     )
 
-    plan_items = parse_asset_plan(text)
+    asset_errors = []
+    plan_items = parse_asset_plan(text, errors=asset_errors)
     plan_items = filter_asset_plan(plan_items, final_note)
     plan_data = [to_plain_data(item) for item in plan_items]
 
     emit_event("info", text=f"✅ 资产规划完成：{len(plan_data)} 项")
 
-    return {"asset_plan": plan_data}
+    return {"asset_plan": plan_data, "asset_errors": asset_errors}
 
 
 @tool
@@ -365,7 +380,7 @@ def generate_note_assets(
     """
     if not asset_plan:
         emit_event("info", text="ℹ️ 无需生成资产")
-        return {"generated_assets": {}, "asset_paths": []}
+        return {"generated_assets": {}, "asset_paths": [], "asset_errors": []}
 
     emit_event("info", text=f"🎨 正在生成 {len(asset_plan)} 项资产")
 
@@ -380,15 +395,17 @@ def generate_note_assets(
         stream=False,
     )
 
-    generated_assets = parse_generated_assets(text)
+    asset_errors = []
+    generated_assets = parse_generated_assets(text, errors=asset_errors)
     generated_assets = validate_generated_assets(generated_assets)
-    asset_paths = save_generated_assets(run_id, generated_assets)
+    asset_paths = save_generated_assets(run_id, generated_assets, errors=asset_errors)
 
     emit_event("info", text=f"✅ 资产生成完成：{len(asset_paths)} 个文件")
 
     return {
         "generated_assets": to_plain_data(generated_assets),
         "asset_paths": asset_paths,
+        "asset_errors": asset_errors,
     }
 
 

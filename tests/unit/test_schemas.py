@@ -11,7 +11,14 @@ from note_agent.assets.types import (
     GeneratedAssets,
     MermaidBlock,
 )
-from note_agent.domain.models import ReferenceItem, ReferenceQuery, RunRecord, new_run_id, now_iso
+from note_agent.domain.models import (
+    ReferenceItem,
+    ReferenceQuery,
+    RunRecord,
+    build_base_state,
+    new_run_id,
+    now_iso,
+)
 from note_agent.domain.api import NoteAgentRequest, NoteAgentResponse
 
 
@@ -49,6 +56,24 @@ class TestNoteAgentRequest:
     def test_minimal_valid(self) -> None:
         req = NoteAgentRequest(raw_input="hello")
         assert req.raw_input == "hello"
+
+
+class TestBuildBaseState:
+    def test_contains_shared_defaults(self) -> None:
+        state = build_base_state(
+            run_id="r1",
+            raw_input="hello",
+            max_iterations=1,
+            llm_provider="deepseek",
+            search_api="duckduckgo",
+            enable_assets=False,
+            enable_notion=False,
+        )
+
+        assert state["run_id"] == "r1"
+        assert state["messages"] == []
+        assert state["failed_sources"] == []
+        assert state["asset_errors"] == []
 
 
 class TestReferenceQuery:

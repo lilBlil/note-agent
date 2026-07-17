@@ -163,6 +163,7 @@ def retrieve_references_node(state: NoteResearchState):
 
     evidence_items = list(state.get("evidence_items", []))
     sources = list(state.get("sources", []))
+    failed_sources = list(state.get("failed_sources", []))
 
     if not state["reference_queries"]:
         emit_event("info", text="本轮没有需要检索的参考信息。")
@@ -170,6 +171,7 @@ def retrieve_references_node(state: NoteResearchState):
             "reference_results": [],
             "evidence_items": evidence_items,
             "sources": dedupe_urls(sources),
+            "failed_sources": failed_sources,
         }
 
     queries = []
@@ -183,30 +185,43 @@ def retrieve_references_node(state: NoteResearchState):
     current_round_results = []
 
     def fetch(rq: ReferenceQuery):
+        failures = []
         emit_event("info", text=f"正在检索：{rq.query}；来源类型：{', '.join(rq.source_types)}")
         try:
-            return retrieve_references(
+            results = retrieve_references(
                 rq,
                 web_backend=state["search_api"],
                 max_results_per_type=max_results_per_source(),
+                on_failure=failures.append,
             )
+            return results, failures
         except Exception as e:
+            failure = {
+                "query": rq.query,
+                "source_type": ",".join(rq.source_types),
+                "source_name": state["search_api"],
+                "error_type": type(e).__name__,
+                "error": str(e),
+            }
+            emit_event("warning", text=f"Reference retrieval failed: {rq.query}: {e}", failed_source=failure)
             emit_event("info", text=f"检索失败：{rq.query}；原因：{e}")
-            return []
+            return [], [failure]
 
     with ThreadPoolExecutor(max_workers=min(len(queries), max_retrieval_workers())) as pool:
         futures = {pool.submit(fetch, rq): rq for rq in queries}
         for fut in as_completed(futures):
-            results = fut.result()
+            results, failures = fut.result()
             with lock:
                 current_round_results.extend(results)
                 evidence_items.extend(results)
                 sources.extend(collect_reference_urls(results))
+                failed_sources.extend(failures)
 
     return {
         "reference_results": current_round_results,
         "evidence_items": evidence_items,
         "sources": dedupe_urls(sources),
+        "failed_sources": failed_sources,
     }
 
 
@@ -293,13 +308,14 @@ def plan_note_assets(state: NoteResearchState):
         stream=False,
     )
 
-    plan_items = parse_asset_plan(text)
+    asset_errors = list(state.get("asset_errors", []))
+    plan_items = parse_asset_plan(text, errors=asset_errors)
     plan_items = filter_asset_plan(plan_items, state["final_note"])
     plan_data = [to_plain_data(item) for item in plan_items]
 
     emit_event("info", text=f"资产规划数量（过滤后）：{len(plan_data)}")
 
-    return {"asset_plan": plan_data}
+    return {"asset_plan": plan_data, "asset_errors": asset_errors}
 
 
 def generate_note_assets(state: NoteResearchState):
@@ -310,6 +326,7 @@ def generate_note_assets(state: NoteResearchState):
         return {
             "generated_assets": {},
             "asset_paths": [],
+            "asset_errors": list(state.get("asset_errors", [])),
         }
 
     asset_plan_text = json.dumps(state["asset_plan"], ensure_ascii=False, indent=2)
@@ -323,15 +340,17 @@ def generate_note_assets(state: NoteResearchState):
         stream=False,
     )
 
-    generated_assets = parse_generated_assets(text)
+    asset_errors = list(state.get("asset_errors", []))
+    generated_assets = parse_generated_assets(text, errors=asset_errors)
     generated_assets = validate_generated_assets(generated_assets)
-    asset_paths = save_generated_assets(state["run_id"], generated_assets)
+    asset_paths = save_generated_assets(state["run_id"], generated_assets, errors=asset_errors)
 
     emit_event("info", text=f"已生成并保存资产文件：{len(asset_paths)} 个")
 
     return {
         "generated_assets": to_plain_data(generated_assets),
         "asset_paths": asset_paths,
+        "asset_errors": asset_errors,
     }
 
 

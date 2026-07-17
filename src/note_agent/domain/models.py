@@ -25,6 +25,50 @@ def new_run_id() -> str:
     return f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex[:8]}"
 
 
+def build_base_state(
+    *,
+    run_id: str,
+    raw_input: str,
+    max_iterations: int,
+    llm_provider: str,
+    search_api: str,
+    enable_assets: bool,
+    enable_notion: bool,
+    messages: Sequence[BaseMessage] | None = None,
+) -> dict[str, Any]:
+    """Build the shared initial graph state for fixed and ReAct runners."""
+    return {
+        "messages": list(messages or []),
+        "run_id": run_id,
+        "raw_input": raw_input,
+        "max_iterations": max_iterations,
+        "iteration_count": 0,
+        "llm_provider": llm_provider,
+        "search_api": search_api,
+        "enable_assets": enable_assets,
+        "enable_notion": enable_notion,
+        "note_type": "",
+        "note_outline": [],
+        "current_note": "",
+        "reference_queries": [],
+        "used_reference_queries": [],
+        "reference_results": [],
+        "evidence_items": [],
+        "sources": [],
+        "failed_sources": [],
+        "verification_report": "",
+        "final_note": "",
+        "note_title": "",
+        "saved_path": "",
+        "notion_url": "",
+        "intermediate_paths": [],
+        "asset_plan": [],
+        "generated_assets": {},
+        "asset_paths": [],
+        "asset_errors": [],
+    }
+
+
 class ReferenceQuery(BaseModel):
     """A unified reference retrieval request."""
 
@@ -101,6 +145,7 @@ class NoteResearchState(TypedDict):
     reference_results: list[ReferenceItem]
     evidence_items: list[ReferenceItem]
     sources: list[str]
+    failed_sources: list[dict[str, Any]]
 
     # Verification
     verification_report: str
@@ -116,3 +161,4 @@ class NoteResearchState(TypedDict):
     asset_plan: list[dict[str, Any]]
     generated_assets: dict[str, Any]
     asset_paths: list[str]
+    asset_errors: list[dict[str, Any]]

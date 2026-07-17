@@ -225,6 +225,10 @@ def create_tool_node(state: NoteResearchState):
                         current_sources = list(state.get("sources", []))
                         current_sources.extend(tool_result["sources"] or [])
                         state_updates["sources"] = _dedupe_sources(current_sources)
+                    if "failed_sources" in tool_result:
+                        current_failures = list(state.get("failed_sources", []))
+                        current_failures.extend(tool_result["failed_sources"] or [])
+                        state_updates["failed_sources"] = current_failures
                     if "final_note" in tool_result:
                         state_updates["final_note"] = tool_result["final_note"]
                     if "final_note_with_assets" in tool_result:
@@ -235,6 +239,10 @@ def create_tool_node(state: NoteResearchState):
                         state_updates["generated_assets"] = tool_result["generated_assets"]
                     if "asset_paths" in tool_result:
                         state_updates["asset_paths"] = tool_result["asset_paths"]
+                    if "asset_errors" in tool_result:
+                        current_errors = list(state.get("asset_errors", []))
+                        current_errors.extend(tool_result["asset_errors"] or [])
+                        state_updates["asset_errors"] = current_errors
                     if "saved_path" in tool_result:
                         state_updates["saved_path"] = tool_result["saved_path"]
                     if "note_title" in tool_result:

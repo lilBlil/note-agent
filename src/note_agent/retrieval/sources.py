@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
+from typing import Any
 
 import requests
 from ddgs import DDGS
 
 from note_agent.config.runtime import request_timeout
 from note_agent.domain.models import ReferenceItem, now_iso
+from note_agent.io.events import emit_event
 from note_agent.retrieval.cache import load_reference_cache, save_reference_cache
 
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -17,6 +20,34 @@ ARXIV_URL = "https://export.arxiv.org/api/query"
 OPENALEX_URL = "https://api.openalex.org/works"
 GOOGLE_BOOKS_URL = "https://www.googleapis.com/books/v1/volumes"
 OPEN_LIBRARY_URL = "https://openlibrary.org/search.json"
+FailureHandler = Callable[[dict[str, Any]], None]
+
+
+def _record_source_failure(
+    *,
+    query: str,
+    source_type: str,
+    source_name: str,
+    error: Exception,
+    on_failure: FailureHandler | None = None,
+) -> None:
+    payload = {
+        "query": query,
+        "source_type": source_type,
+        "source_name": source_name,
+        "error_type": type(error).__name__,
+        "error": str(error),
+    }
+    emit_event(
+        "warning",
+        text=(
+            "Reference source failed: "
+            f"{source_name} ({source_type}) for query {query}: {error}"
+        ),
+        failed_source=payload,
+    )
+    if on_failure:
+        on_failure(payload)
 
 
 def _clean_text(value: str | None) -> str:
@@ -414,6 +445,7 @@ def retrieve_by_source_type(
     source_type: str,
     web_backend: str = "duckduckgo",
     max_results: int = 5,
+    on_failure: FailureHandler | None = None,
 ) -> list[ReferenceItem]:
     if source_type == "web":
         if web_backend == "tavily":
@@ -429,7 +461,14 @@ def retrieve_by_source_type(
         for fn in (retrieve_semantic_scholar, retrieve_arxiv):
             try:
                 results.extend(fn(query, max_results=max_results))
-            except Exception:
+            except Exception as e:
+                _record_source_failure(
+                    query=query,
+                    source_type=source_type,
+                    source_name=fn.__name__.removeprefix("retrieve_"),
+                    error=e,
+                    on_failure=on_failure,
+                )
                 continue
         return dedupe_references(results)
 
@@ -438,7 +477,14 @@ def retrieve_by_source_type(
         for fn in (retrieve_google_books, retrieve_open_library):
             try:
                 results.extend(fn(query, max_results=max_results))
-            except Exception:
+            except Exception as e:
+                _record_source_failure(
+                    query=query,
+                    source_type=source_type,
+                    source_name=fn.__name__.removeprefix("retrieve_"),
+                    error=e,
+                    on_failure=on_failure,
+                )
                 continue
         return dedupe_references(results)
 
@@ -447,7 +493,14 @@ def retrieve_by_source_type(
         for fn in (retrieve_openalex, retrieve_semantic_scholar):
             try:
                 results.extend(fn(query, max_results=max_results))
-            except Exception:
+            except Exception as e:
+                _record_source_failure(
+                    query=query,
+                    source_type=source_type,
+                    source_name=fn.__name__.removeprefix("retrieve_"),
+                    error=e,
+                    on_failure=on_failure,
+                )
                 continue
         return dedupe_references(results)
 

@@ -282,6 +282,29 @@ class TestRetrieveReferences:
         assert len(result["reference_results"]) >= 1
         assert "https://example.com" in result["sources"]
 
+    def test_records_retrieval_failures(self, base_state) -> None:
+        """Retrieval exceptions should be visible in state and warning events."""
+        from unittest.mock import patch
+
+        base_state["reference_queries"] = [
+            {"query": "test", "source_types": ["web"], "reason": "test"}
+        ]
+        with mock_graph_io() as mocks:
+            with patch(
+                "note_agent.agent.graph.retrieve_references",
+                side_effect=RuntimeError("backend down"),
+            ):
+                result = retrieve_references_node(base_state)
+
+        assert result["reference_results"] == []
+        assert len(result["failed_sources"]) == 1
+        assert result["failed_sources"][0]["error"] == "backend down"
+        mocks["emit_event"].assert_any_call(
+            "warning",
+            text="Reference retrieval failed: test: backend down",
+            failed_source=result["failed_sources"][0],
+        )
+
 
 # ============================================================================
 # verify_and_refine node
@@ -355,6 +378,16 @@ class TestPlanAssets:
         with mock_entire_pipeline(["[]"]):
             result = plan_note_assets(base_state)
         assert result["asset_plan"] == []
+        assert result["asset_errors"] == []
+
+    def test_invalid_plan_records_asset_error(self, base_state) -> None:
+        base_state["final_note"] = "# Pure Text\n\nNo need for assets."
+        base_state["note_type"] = "瀛︿範绗旇"
+        with mock_entire_pipeline(["not-json"]):
+            result = plan_note_assets(base_state)
+        assert result["asset_plan"] == []
+        assert len(result["asset_errors"]) == 1
+        assert result["asset_errors"][0]["stage"] == "parse_asset_plan"
 
     def test_dict_plan(self, base_state) -> None:
         """Plan can be a dict with 'assets' key."""
@@ -393,6 +426,7 @@ class TestGenerateAssets:
             result = generate_note_assets(base_state)
         assert "formulas" in result["generated_assets"]
         assert len(result["generated_assets"]["formulas"]) == 1
+        assert result["asset_errors"] == []
 
 
 # ============================================================================
