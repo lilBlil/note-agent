@@ -1,158 +1,191 @@
 # Note Agent
 
-基于 **LangGraph + LangChain** 的研究笔记 Agent。它可以从手动输入、文本文件和网页内容中整理研究主题，自动生成 Markdown 笔记，并通过参考信息检索、事实核验、多轮修正和多模态资产生成提升笔记质量。
+Note Agent 是一个基于 LangGraph 和 LangChain 的研究笔记生成工具。它接收主题、文本、Markdown/TXT 文件或网页链接，调用大模型生成结构化 Markdown 笔记，并可选执行资料检索、事实核验、多轮修正、资产生成和 Notion 发布。
 
-## 功能
+## 功能概览
 
-- 多输入源：手动文本、`.txt` / `.md` 文件、网页 URL
-- 多模型后端：DeepSeek、OpenAI、Qwen、Moonshot、Zhipu、SiliconFlow
-- 统一参考检索：Web、论文、综合学术资料
-- 事实核验与多轮修正
-- 自动保存最终笔记、中间版本、运行日志和生成资产
-- Streamlit 可视化界面
-- 可选公式、代码、Mermaid 图和图表资产生成
-- 一键发布笔记到 Notion（子页面模式）
+- 输入：主题、长文本、`.txt` / `.md` 文件、网页 URL
+- 模型：DeepSeek、OpenAI、Qwen、Moonshot、Zhipu、SiliconFlow
+- 检索：DuckDuckGo、Tavily、Perplexity、SearXNG
+- 模式：固定工作流、ReAct Agent
+- 输出：Markdown 笔记、中间版本、运行日志、参考资料缓存
+- 可选：公式、代码、Mermaid、图表资产生成；发布为 Notion 子页面
 
-## 项目结构
+## 环境要求
 
-```text
-note-agent/
-├─ scripts/
-│  └─ main.py                   # CLI 兼容 wrapper
-├─ src/note_agent/
-│  ├─ __init__.py               # 版本号
-│  ├─ cli.py                    # 命令行交互入口
-│  ├─ web.py                    # Streamlit 界面入口
-│  ├─ utils.py                  # 通用工具函数
-│  ├─ config/
-│  │  ├─ settings.py            # LLM 模型配置
-│  │  └─ llm.py                 # LLM 调用封装
-│  ├─ domain/
-│  │  ├─ models.py              # 领域模型（ReferenceItem, NoteResearchState 等）
-│  │  └─ api.py                 # I/O schema（NoteAgentRequest/Response）
-│  ├─ agent/
-│  │  ├─ graph.py               # LangGraph 工作流
-│  │  ├─ runner.py              # 同步/流式服务层
-│  │  └─ prompts.py             # LLM 提示词模板
-│  ├─ retrieval/
-│  │  ├─ retriever.py           # 检索编排与格式化
-│  │  ├─ sources.py             # 8 种搜索后端（Web/论文/书籍/学术）
-│  │  └─ cache.py               # 检索结果缓存
-│  ├─ io/
-│  │  ├─ events.py              # 流式事件系统
-│  │  ├─ input_loader.py        # 文本/文件/网页输入加载
-│  │  ├─ storage.py             # 运行日志、状态快照、中间文件
-│  │  └─ text.py                # 文本/Markdown 工具
-│  ├─ assets/
-│  │  ├─ types.py               # 资产 Pydantic 模型
-│  │  └─ tools.py               # 资产生成与 Markdown 注入
-│  └─ notion/
-│     ├─ client.py              # Notion SDK 封装
-│     ├─ converter.py           # Markdown → Notion blocks
-│     └─ publish.py             # 发布编排
-├─ tests/
-│  ├─ conftest.py
-│  ├─ unit/                     # 单元测试
-│  └─ integration/              # 集成测试（占位）
-├─ demos/                       # 历史示例
-├─ notes/                       # 生成的笔记和资产
-├─ runs/                        # 运行日志
-├─ .cache/                      # 检索缓存
-├─ app.py                       # 入口：streamlit run app.py
-├─ pyproject.toml
-└─ uv.lock
+- Python 3.11+
+- `uv`
+- 至少一个 LLM API Key
+- Docker 可选
+
+安装 `uv`：
+
+```powershell
+pip install uv
 ```
 
-## 安装
+## 快速运行
 
-推荐使用 `uv`：
+安装依赖：
 
-```bash
+```powershell
 uv sync
 ```
 
-如果需要生成图表图片等多模态资产：
-
-```bash
-uv sync --extra assets
-```
-
-如果需要发布笔记到 Notion：
-
-```bash
-uv sync --extra notion
-```
-
-## 配置
-
-复制环境变量模板：
+如需资产生成和 Notion 发布：
 
 ```powershell
-copy .env.example .env
+uv sync --extra assets --extra notion
 ```
 
-至少配置一个模型供应商的 API Key：
+复制环境变量：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+macOS/Linux：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`，至少配置一个模型供应商：
 
 ```env
 DEEPSEEK_API_KEY=your_deepseek_api_key
-OPENAI_API_KEY=your_openai_api_key
-DASHSCOPE_API_KEY=your_qwen_api_key
-MOONSHOT_API_KEY=your_moonshot_api_key
-ZHIPU_API_KEY=your_zhipu_api_key
-SILICONFLOW_API_KEY=your_siliconflow_api_key
-
 DEFAULT_LLM_PROVIDER=deepseek
 SEARCH_API=duckduckgo
 DEFAULT_MAX_ITERATIONS=1
+```
 
-# Notion（可选）
+启动 Web UI：
+
+```powershell
+uv run streamlit run app.py
+```
+
+打开：
+
+```text
+http://localhost:8501
+```
+
+## 使用方式
+
+### Web UI
+
+Web UI 是推荐入口。你可以输入主题或正文，上传 `.txt` / `.md` 文件，或粘贴网页 URL。侧边栏提供模型、检索后端、迭代次数、运行模式、资产生成和 Notion 发布等设置。
+
+指定端口：
+
+```powershell
+uv run streamlit run app.py --server.port 8501
+```
+
+### CLI
+
+启动交互式命令行：
+
+```powershell
+uv run note-agent
+```
+
+CLI 会依次询问输入内容、文件路径、网页 URL、迭代次数、LLM 供应商、检索后端、运行模式，以及是否启用资产生成和 Notion 发布。
+
+## 配置说明
+
+`.env` 用于配置模型、检索、运行参数和 Notion。不要提交包含真实 API Key 的 `.env`。
+
+### LLM
+
+| provider | 环境变量 | 默认模型 |
+|----------|----------|----------|
+| `deepseek` | `DEEPSEEK_API_KEY` | `deepseek-v4-pro` |
+| `openai` | `OPENAI_API_KEY` | `gpt-4o` |
+| `qwen` | `DASHSCOPE_API_KEY` | `qwen-max` |
+| `moonshot` | `MOONSHOT_API_KEY` | `moonshot-v1-128k` |
+| `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` |
+| `siliconflow` | `SILICONFLOW_API_KEY` | `deepseek-ai/DeepSeek-V3` |
+
+### 检索
+
+| search_api | 配置 |
+|------------|------|
+| `duckduckgo` | 无需 Key |
+| `tavily` | `TAVILY_API_KEY` |
+| `perplexity` | `PERPLEXITY_API_KEY` |
+| `searxng` | `SEARXNG_URL` |
+
+### 运行参数
+
+```env
+DEFAULT_MAX_ITERATIONS=1
+MAX_REFERENCE_QUERIES=3
+MAX_RESULTS_PER_SOURCE=3
+MAX_RETRIEVAL_WORKERS=3
+REFERENCE_REQUEST_TIMEOUT=15
+```
+
+`DEFAULT_MAX_ITERATIONS=0` 表示跳过检索核验循环，仅生成笔记。
+
+### Notion
+
+```env
 NOTION_API_KEY=your_notion_integration_secret
 NOTION_PARENT_PAGE_ID=your_notion_parent_page_id
 ```
 
-### Notion 集成步骤
+在 Notion 创建 Internal Integration，将父页面授权给该 Integration，然后在 Web UI 或 CLI 中启用 Notion 发布。
 
-1. 访问 [Notion Integrations](https://www.notion.so/my-integrations) 创建集成，复制 **Internal Integration Secret** 填入 `NOTION_API_KEY`
-2. 在 Notion 中创建一个页面作为笔记的父页面，从 URL 中复制 32 位页面 ID 填入 `NOTION_PARENT_PAGE_ID`
-3. 在集成页面点击 **Add connections**，授权该父页面
-4. 在 Streamlit 界面侧边栏勾选 **"Publish to Notion"** 即可
+## Docker 运行
 
-#### Markdown → Notion 支持语法
+容器运行 Note Agent Web UI。模型、搜索和 Notion 等外部服务通过 `.env` 配置。
 
-发布时自动将 Markdown 转换为 Notion blocks，支持数学公式的全部 4 种 LaTeX 分隔符：
+```powershell
+docker compose up -d --build
+```
 
-| 写法 | 含义 |
+访问：
+
+```text
+http://localhost:8501
+```
+
+查看日志和停止服务：
+
+```powershell
+docker compose logs -f
+docker compose down
+```
+
+持久化目录：
+
+| 宿主机目录 | 容器目录 | 内容 |
+|------------|----------|------|
+| `./notes` | `/app/notes` | 笔记和生成资产 |
+| `./runs` | `/app/runs` | 运行记录 |
+| `./.cache` | `/app/.cache` | 检索缓存 |
+
+如果容器需要访问宿主机上的本地服务，例如本地 SearXNG，应使用：
+
+```env
+SEARXNG_URL=http://host.docker.internal:8888
+```
+
+## 输出目录
+
+| 路径 | 内容 |
 |------|------|
-| `$...$` | 行内公式 |
-| `$$...$$` | 独立公式 |
-| `\(...\)` | 行内公式（标准 LaTeX） |
-| `\[...\]` | 独立公式（标准 LaTeX） |
+| `notes/` | 最终 Markdown 笔记 |
+| `notes/intermediate/` | 中间版本 |
+| `notes/assets/` | 公式、代码、Mermaid、图表等资产 |
+| `runs/{run_id}/` | 运行摘要、事件日志、最终状态 |
+| `.cache/references/` | 检索缓存 |
 
-## 运行
+## 检查
 
-命令行：
-
-```bash
-uv run note-agent          # 通过 pyproject.toml 入口
-python scripts/main.py     # 或直接脚本
-```
-
-Streamlit 界面：
-
-```bash
-uv run streamlit run app.py
-```
-
-## 测试
-
-```bash
+```powershell
 uv run pytest tests/ -v
+uv run python -m compileall -q src
 ```
-
-## 输出
-
-- `notes/`：最终 Markdown 笔记
-- `notes/intermediate/`：每轮中间版本
-- `notes/assets/`：公式、代码、Mermaid、图表等生成资产
-- `runs/{run_id}/`：运行摘要、事件日志和最终状态快照
-- `.cache/references/`：参考信息检索缓存
