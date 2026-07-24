@@ -23,6 +23,109 @@ def _norm_sources(items: list) -> list:
     return out
 
 
+def _norm_queries(items: list) -> list:
+    """Order-preserving dedupe for query dicts or plain query strings."""
+    seen: set[str] = set()
+    out: list = []
+    for it in items or []:
+        if isinstance(it, dict):
+            query = str(it.get("query", "")).strip()
+            source_types = it.get("source_types") or []
+            reason = str(it.get("reason", "")).strip()
+            key = query.lower()
+            value = {
+                "query": query,
+                "source_types": list(source_types) if isinstance(source_types, list) else [str(source_types)],
+                "reason": reason,
+            }
+        else:
+            query = str(it).strip()
+            key = query.lower()
+            value = {"query": query, "source_types": [], "reason": ""}
+        if query and key not in seen:
+            seen.add(key)
+            out.append(value)
+    return out
+
+
+def _append_trace(view: dict, event: dict, text: str) -> None:
+    if not text:
+        return
+    trace = view.setdefault("trace", [])
+    trace.append({
+        "type": event.get("type", ""),
+        "node": event.get("node_name", ""),
+        "text": text,
+    })
+    del trace[:-120]
+
+
+def _current_agent_output(view: dict) -> dict | None:
+    output_id = view.get("_current_output")
+    if output_id is None:
+        return None
+    return next((item for item in view.get("agent_outputs", []) if item.get("id") == output_id), None)
+
+
+def _start_agent_output(view: dict, event: dict, label: str) -> None:
+    for item in view.get("agent_outputs", []):
+        if item.get("status") == "running":
+            item["status"] = "done"
+
+    outputs = view.setdefault("agent_outputs", [])
+    output_id = view.get("_output_seq", 0)
+    view["_output_seq"] = output_id + 1
+    output = {
+        "id": output_id,
+        "node": event.get("node_name", ""),
+        "label": label,
+        "status": "running",
+        "messages": [f"开始：{label}"],
+        "content": "",
+    }
+    outputs.append(output)
+    view["_current_output"] = output["id"]
+    del outputs[:-30]
+
+
+def _append_agent_message(view: dict, text: str) -> None:
+    if not text:
+        return
+    output = _current_agent_output(view)
+    if output is None:
+        output_id = view.get("_output_seq", 0)
+        view["_output_seq"] = output_id + 1
+        output = {
+            "id": output_id,
+            "node": "",
+            "label": "运行状态",
+            "status": "running",
+            "messages": [],
+            "content": "",
+        }
+        view["agent_outputs"].append(output)
+        view["_current_output"] = output["id"]
+    output.setdefault("messages", []).append(text)
+    del output["messages"][:-12]
+
+
+def _append_agent_content(view: dict, text: str) -> None:
+    if not text:
+        return
+    output = _current_agent_output(view)
+    if output is None:
+        _append_agent_message(view, "正在生成内容")
+        output = _current_agent_output(view)
+    if output is not None:
+        output["content"] = (output.get("content") or "") + text
+
+
+def _finish_agent_outputs(view: dict, status: str) -> None:
+    for item in view.get("agent_outputs", []):
+        if item.get("status") == "running":
+            item["status"] = status
+
+
 def build_combined_input(params: dict, view: dict):
     """Assemble the agent's raw_input from text + file bytes + fetched URLs."""
     from note_agent.io.input_loader import (
@@ -53,9 +156,13 @@ def _fold_event(view: dict, event: dict) -> None:
     """Fold one agent event into the view (no rendering here)."""
     etype = event.get("type")
     mode = view["mode"]
+    if event.get("run_id"):
+        view["run_id"] = event["run_id"]
 
     if etype == "node_start":
         node, label = event["node_name"], event["step_label"]
+        _append_trace(view, event, f"开始：{label}")
+        _start_agent_output(view, event, label)
         # Update cumulative usage BEFORE sealing the previous step so its
         # token delta is attributed correctly.
         if event.get("usage"):
@@ -71,34 +178,79 @@ def _fold_event(view: dict, event: dict) -> None:
     elif etype == "token":
         # Fixed mode streams draft/finalize tokens; show them live.
         view["live_text"] += event.get("text", "")
+        _append_agent_content(view, event.get("text", ""))
 
     elif etype == "progress":
         # ReAct: whole note-so-far after each state; replace (not append).
         note = event.get("note") or ""
         if note:
             view["live_text"] = note
+            output = _current_agent_output(view)
+            if output is not None:
+                output["content"] = note
         if event.get("iteration_count") is not None:
             view["iteration"] = event["iteration_count"]
 
     elif etype in ("info", "warning"):
         text = event.get("text", "")
+        _append_trace(view, event, text)
+        _append_agent_message(view, text)
+        if event.get("reference_queries") is not None:
+            current = view.get("reference_queries", [])
+            current.extend(_norm_queries(event.get("reference_queries") or []))
+            view["reference_queries"] = _norm_queries(current)
+        if event.get("failed_source"):
+            view.setdefault("failed_sources", []).append(event["failed_source"])
+        if event.get("failed_sources"):
+            view.setdefault("failed_sources", []).extend(event["failed_sources"] or [])
+        if event.get("note_type"):
+            view["note_type"] = event["note_type"]
+        if event.get("note_outline") is not None:
+            view["note_outline"] = event["note_outline"]
+        if event.get("saved_path"):
+            view["saved_path"] = event["saved_path"]
         if mode == "react" and text:
             state.add_react_observe(view, text)
 
     elif etype == "done":
         st_ = event.get("state", {})
         view["final_note"] = st_.get("final_note", "") or view.get("final_note", "")
+        view["note_type"] = st_.get("note_type", "") or view.get("note_type", "")
+        view["note_outline"] = st_.get("note_outline", []) or view.get("note_outline", [])
         view["sources"] = _norm_sources(st_.get("sources", []) or [])
+        queries = st_.get("reference_queries", []) or st_.get("used_reference_queries", []) or []
+        view["reference_queries"] = _norm_queries(
+            (view.get("reference_queries") or []) + _norm_queries(queries)
+        )
+        view["failed_sources"] = st_.get("failed_sources", []) or view.get("failed_sources", [])
+        view["intermediate_paths"] = st_.get("intermediate_paths", []) or []
+        view["asset_paths"] = st_.get("asset_paths", []) or []
+        view["asset_errors"] = st_.get("asset_errors", []) or []
+        view["saved_path"] = st_.get("saved_path", "") or view.get("saved_path", "")
+        view["notion_url"] = st_.get("notion_url", "") or view.get("notion_url", "")
         view["usage"] = event.get("usage", {}) or view["usage"]
         view["run_id"] = event.get("run_id", "")
         view["run_log_dir"] = event.get("run_log_dir", "")
         view["_done_state"] = st_
+        _append_trace(view, event, "运行完成")
+        _append_agent_message(view, "运行完成")
+        _finish_agent_outputs(view, "done")
 
     elif etype == "error":
         view["error"] = event.get("message") or event.get("text", "")
+        _append_trace(view, event, view["error"])
+        _append_agent_message(view, view["error"])
+        _finish_agent_outputs(view, "error")
 
 
-def execute_stream(view: dict, status_ph, output_ph) -> None:
+def _render_details(details_ph, view: dict) -> None:
+    if details_ph is None:
+        return
+    with details_ph.container():
+        render.details_panel(view)
+
+
+def execute_stream(view: dict, status_ph, output_ph, details_ph=None) -> None:
     """Run the agent and repaint status/output placeholders as events arrive."""
     from note_agent.domain.api import NoteAgentRequest
     from note_agent.agent.runner_unified import stream_note_agent_events
@@ -121,6 +273,7 @@ def execute_stream(view: dict, status_ph, output_ph) -> None:
         state.finish(view, "error")
         render.status_panel(status_ph, view)
         render.output_canvas(output_ph, view)
+        _render_details(details_ph, view)
         return
 
     if not (combined or "").strip():
@@ -128,6 +281,7 @@ def execute_stream(view: dict, status_ph, output_ph) -> None:
         state.finish(view, "error")
         render.status_panel(status_ph, view)
         render.output_canvas(output_ph, view)
+        _render_details(details_ph, view)
         return
 
     request = NoteAgentRequest(
@@ -141,6 +295,7 @@ def execute_stream(view: dict, status_ph, output_ph) -> None:
 
     render.status_panel(status_ph, view)
     render.output_canvas(output_ph, view)
+    _render_details(details_ph, view)
 
     fatal = False
     try:
@@ -148,6 +303,7 @@ def execute_stream(view: dict, status_ph, output_ph) -> None:
             _fold_event(view, event)
             render.status_panel(status_ph, view)
             render.output_canvas(output_ph, view)
+            _render_details(details_ph, view)
             if event.get("type") == "error" and event.get("fatal", True):
                 fatal = True
                 break
@@ -156,5 +312,7 @@ def execute_stream(view: dict, status_ph, output_ph) -> None:
         fatal = True
 
     state.finish(view, "error" if (fatal or view.get("error")) else "done")
+    _finish_agent_outputs(view, "error" if (fatal or view.get("error")) else "done")
     render.status_panel(status_ph, view)
     render.output_canvas(output_ph, view)
+    _render_details(details_ph, view)

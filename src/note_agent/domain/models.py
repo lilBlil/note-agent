@@ -110,7 +110,7 @@ class RunRecord(BaseModel):
     """Summary record for a single agent run."""
 
     run_id: str
-    status: Literal["running", "success", "error"] = "running"
+    status: Literal["running", "success", "error", "cancelled"] = "running"
     raw_input_preview: str = ""
     llm_provider: str = ""
     search_api: str = ""

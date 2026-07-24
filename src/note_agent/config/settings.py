@@ -10,6 +10,8 @@ from langchain_anthropic import ChatAnthropic
 from langchain_deepseek import ChatDeepSeek
 from langchain_openai import ChatOpenAI
 
+from note_agent.config.runtime import llm_request_timeout, llm_stream_chunk_timeout
+
 load_dotenv()
 
 MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
@@ -61,6 +63,8 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
 
     # Only include stream_options for streaming calls (not tool calls)
     model_kwargs = {} if for_tools else {"stream_options": {"include_usage": True}}
+    timeout = llm_request_timeout()
+    chunk_timeout = llm_stream_chunk_timeout()
 
     if provider == "deepseek":
         return ChatDeepSeek(
@@ -68,12 +72,17 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
             api_key=api_key,
             temperature=0,
             model_kwargs=model_kwargs,
+            timeout=timeout,
+            max_retries=0,
+            stream_chunk_timeout=chunk_timeout,
         )
     if provider == "anthropic":
         return ChatAnthropic(
             model=str(cfg["model"]),
             api_key=api_key,
             temperature=0,
+            timeout=timeout,
+            max_retries=0,
         )
     return ChatOpenAI(
         model=str(cfg["model"]),
@@ -81,6 +90,9 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
         base_url=str(cfg["base_url"] or ""),
         temperature=0,
         model_kwargs=model_kwargs,
+        timeout=timeout,
+        max_retries=0,
+        stream_chunk_timeout=chunk_timeout,
     )
 
 

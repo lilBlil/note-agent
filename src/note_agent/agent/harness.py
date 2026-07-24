@@ -13,6 +13,7 @@ from note_agent.domain.models import new_run_id
 from note_agent.io.events import reset_event_handler, set_event_handler
 from note_agent.io.storage import (
     append_event,
+    heartbeat_run,
     finish_run,
     get_run_dir,
     save_state_snapshot,
@@ -73,6 +74,7 @@ def run_agent(
 
     try:
         result = graph_factory().invoke(initial_state)
+        result["usage"] = summarize_usage()
         save_state_snapshot(run_id, result)
         finish_run(
             run_id=run_id,
@@ -106,6 +108,7 @@ def stream_agent_events(
     def handler(event: dict[str, Any]) -> None:
         if stop.is_set():
             return
+        event = {"run_id": run_id, **event}
         if event.get("type") != "token":
             append_event(run_id, event)
         if event.get("type") == "node_start":
@@ -128,10 +131,16 @@ def stream_agent_events(
                     if progress_event:
                         q.put(progress_event)
 
+                save_state_snapshot(run_id, current_state)
+                heartbeat_run(run_id)
+
             if stop.is_set():
                 return
 
+            usage = summarize_usage()
+            current_state["usage"] = usage
             save_state_snapshot(run_id, current_state)
+            heartbeat_run(run_id)
             finish_run(
                 run_id=run_id,
                 status="success",
@@ -143,7 +152,7 @@ def stream_agent_events(
                 "state": current_state,
                 "run_id": run_id,
                 "run_log_dir": str(get_run_dir(run_id).resolve()),
-                "usage": summarize_usage(),
+                "usage": usage,
             })
         except Exception as e:
             if not stop.is_set():
@@ -174,3 +183,5 @@ def stream_agent_events(
                 break
     finally:
         stop.set()
+        if thread.is_alive():
+            finish_run(run_id=run_id, status="cancelled", error="运行被中断")

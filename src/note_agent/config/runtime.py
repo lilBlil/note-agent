@@ -30,3 +30,11 @@ def max_retrieval_workers() -> int:
 
 def request_timeout(default: int = 15) -> int:
     return _env_int("REFERENCE_REQUEST_TIMEOUT", default, minimum=3, maximum=120)
+
+
+def llm_request_timeout(default: int = 60) -> int:
+    return _env_int("LLM_REQUEST_TIMEOUT", default, minimum=10, maximum=300)
+
+
+def llm_stream_chunk_timeout(default: int = 15) -> int:
+    return _env_int("LLM_STREAM_CHUNK_TIMEOUT", default, minimum=5, maximum=120)

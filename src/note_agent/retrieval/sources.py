@@ -13,6 +13,7 @@ from ddgs import DDGS
 from note_agent.config.runtime import request_timeout
 from note_agent.domain.models import ReferenceItem, now_iso
 from note_agent.io.events import emit_event
+from note_agent.net import call_with_retries
 from note_agent.retrieval.cache import load_reference_cache, save_reference_cache
 
 SEMANTIC_SCHOLAR_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -75,7 +76,12 @@ def _cached(source_name: str, query: str, max_results: int, loader):
     cached = load_reference_cache(source_name=source_name, query=query, max_results=max_results)
     if cached is not None:
         return cached
-    results = loader()
+    results = call_with_retries(
+        loader,
+        attempts=3,
+        delay_seconds=1.0,
+        label=f"{source_name} retrieval",
+    )
     save_reference_cache(
         source_name=source_name,
         query=query,

@@ -11,6 +11,7 @@ import re
 import streamlit as st
 
 from note_agent.ui import render, runner_ui, theme
+from note_agent.ui import history
 from note_agent.ui.sidebar import build_sidebar
 from note_agent.ui.state import get_view, new_view, set_view
 
@@ -48,25 +49,44 @@ def _build_and_set_view(text: str, files: list, mode: str, settings: dict) -> bo
     return True
 
 
-def _render_workspace(view: dict) -> None:
+def _render_workspace_static(view: dict) -> None:
     """Task header + Status(25%) | Output(75%) + download + details."""
     render.task_header(view)
     col_status, col_output = st.columns([1, 3], gap="medium")
     status_ph = col_status.empty()
     output_ph = col_output.empty()
+    dl_col, _ = st.columns([1, 3])
+    details_ph = st.empty()
 
     if view["status"] == "pending" and not view.get("readonly"):
         view["status"] = "running"
-        runner_ui.execute_stream(view, status_ph, output_ph)
+        with dl_col:
+            render.download_bar(view)
+        runner_ui.execute_stream(view, status_ph, output_ph, details_ph)
     else:
         render.status_panel(status_ph, view)
         render.output_canvas(output_ph, view)
+        with dl_col:
+            render.download_bar(view)
+        with details_ph.container():
+            render.details_panel(view)
 
-    # Compact download link + collapsed details, side by side to save height.
-    dl_col, _ = st.columns([1, 3])
-    with dl_col:
-        render.download_bar(view)
-    render.details_panel(view)
+
+def _render_workspace(view: dict) -> None:
+    if view["status"] == "running" and view.get("run_id"):
+        @st.fragment(run_every=2)
+        def _running_workspace() -> None:
+            latest = history.load_view(view["run_id"]) or view
+            if latest.get("status") == "running":
+                _render_workspace_static(latest)
+            else:
+                set_view(latest)
+                st.rerun()
+
+        _running_workspace()
+        return
+
+    _render_workspace_static(view)
 
 
 def _render_empty_state() -> None:

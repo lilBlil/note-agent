@@ -44,14 +44,27 @@ def new_view(*, mode: str, task: dict, params: dict, settings: dict) -> dict:
         "max_iterations": settings.get("iters", 0),
         "live_text": "",              # streaming buffer for current node
         "final_note": "",
+        "note_type": "",
+        "note_outline": [],
         "sources": [],
+        "reference_queries": [],
+        "failed_sources": [],
+        "intermediate_paths": [],
+        "asset_paths": [],
+        "asset_errors": [],
+        "saved_path": "",
+        "notion_url": "",
         "usage": {},
+        "trace": [],
+        "agent_outputs": [],
         "run_id": "",
         "run_log_dir": "",
         "error": "",
         "readonly": False,             # True when loaded from history
         "_t0": None,                   # monotonic start of current step
         "_tok0": 0,                    # cumulative tokens at step start
+        "_current_output": None,        # current right-pane agent output id
+        "_output_seq": 0,
     }
 
 

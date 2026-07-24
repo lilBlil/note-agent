@@ -1,6 +1,7 @@
 """ReAct tools for note agent."""
 
 import json
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Annotated
@@ -177,6 +178,27 @@ def search_references(
     reference_queries = reference_queries[:query_limit]
     new_query_texts = new_query_texts[:query_limit]
 
+    query_payload = [to_plain_data(rq) for rq in reference_queries]
+    if reference_queries:
+        lines = []
+        for rq in reference_queries:
+            source_types = ", ".join(rq.source_types)
+            suffix = f" [{source_types}]" if source_types else ""
+            if rq.reason:
+                suffix += f" - {rq.reason}"
+            lines.append(f"- {rq.query}{suffix}")
+        emit_event(
+            "info",
+            text="Generated reference queries:\n" + "\n".join(lines),
+            reference_queries=query_payload,
+        )
+    else:
+        emit_event(
+            "info",
+            text="No new reference queries generated.",
+            reference_queries=[],
+        )
+
     if not reference_queries:
         emit_event("info", text="✅ 未发现新的信息缺口")
         return {"reference_results": [], "new_queries": [], "sources": [], "failed_sources": []}
@@ -224,6 +246,46 @@ def search_references(
                 failed_sources.extend(failures)
 
     emit_event("info", text=f"✅ 检索完成，共获取 {len(all_results)} 条参考信息")
+
+    source_counts = Counter(
+        item.source_name or item.source_type or "unknown"
+        for item in all_results
+    )
+    source_summary = ", ".join(
+        f"{name}:{count}" for name, count in sorted(source_counts.items())
+    ) or "none"
+    emit_event(
+        "info",
+        text=(
+            f"Retrieval summary: total={len(all_results)}; "
+            f"sources={source_summary}"
+        ),
+    )
+    if failed_sources:
+        emit_event(
+            "warning",
+            text=f"Retrieval failures recorded: {len(failed_sources)}",
+            failed_sources=failed_sources,
+        )
+
+    web_requested = any("web" in rq.source_types for rq in reference_queries)
+    web_result_count = source_counts.get(search_api, 0)
+    if not web_requested:
+        emit_event(
+            "info",
+            text=(
+                f"Web backend '{search_api}' was not called because "
+                "no generated query requested source_type='web'."
+            ),
+        )
+    elif web_result_count == 0:
+        emit_event(
+            "warning",
+            text=(
+                f"Web backend '{search_api}' was requested but returned "
+                "no recorded results; check failed_sources."
+            ),
+        )
 
     return {
         "reference_results": [to_plain_data(r) for r in all_results],

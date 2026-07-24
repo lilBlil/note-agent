@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
-from note_agent.ui.runner_ui import _norm_sources
+from note_agent.ui.runner_ui import _norm_queries, _norm_sources
 
 _RUNS = Path("runs")
 
@@ -27,6 +27,16 @@ def _md_title(run_dir: Path) -> str:
         snap = json.loads(snap_p.read_text(encoding="utf-8"))
     except Exception:
         return ""
+    note_title = (snap.get("note_title") or "").strip()
+    if note_title:
+        return note_title
+    outline = snap.get("note_outline") or []
+    if outline and isinstance(outline, list):
+        first = outline[0]
+        if isinstance(first, dict):
+            title = str(first.get("title", "")).strip()
+            if title:
+                return title
     note = snap.get("final_note") or snap.get("current_note") or ""
     for line in note.splitlines():
         s = line.strip()
@@ -36,16 +46,84 @@ def _md_title(run_dir: Path) -> str:
 
 
 def _project_name(run_dir: Path, meta: dict) -> str:
-    """Prefer the note's H1 title; fall back to the first line of the input."""
+    """Prefer the note's planned title; never expose raw input preview."""
     display_name = (meta.get("display_name") or "").strip()
     if display_name:
         return display_name
     title = _md_title(run_dir)
     if title:
         return title
-    raw = (meta.get("raw_input_preview") or "").strip()
-    first = next((ln.strip() for ln in raw.splitlines() if ln.strip()), "")
-    return first
+    return "拟定笔记"
+
+
+def _is_stale_running(meta: dict, *, minutes: int = 10) -> bool:
+    if meta.get("status") != "running":
+        return False
+    updated_at = meta.get("updated_at") or meta.get("created_at") or ""
+    if not updated_at:
+        return False
+    try:
+        ts = datetime.fromisoformat(updated_at)
+    except Exception:
+        return False
+    now = datetime.now(ts.tzinfo) if ts.tzinfo else datetime.now()
+    return now - ts > timedelta(minutes=minutes)
+
+
+def _load_trace_and_queries(run_dir: Path) -> tuple[list[dict], list[dict]]:
+    event_path = run_dir / "events.jsonl"
+    if not event_path.exists():
+        return [], []
+    trace: list[dict] = []
+    queries: list[dict] = []
+    try:
+        lines = event_path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return [], []
+
+    for line in lines:
+        try:
+            event = json.loads(line)
+        except Exception:
+            continue
+        etype = event.get("type", "")
+        if etype == "node_start":
+            trace.append({
+                "type": etype,
+                "node": event.get("node_name", ""),
+                "text": f"开始：{event.get('step_label', '')}",
+            })
+        elif etype in {"info", "warning", "error"}:
+            trace.append({
+                "type": etype,
+                "node": event.get("node_name", ""),
+                "text": event.get("text") or event.get("message") or "",
+            })
+        if event.get("reference_queries") is not None:
+            queries.extend(_norm_queries(event.get("reference_queries") or []))
+    return trace[-120:], _norm_queries(queries)
+
+
+def _latest_intermediate_note(run_id: str) -> str:
+    note_dir = Path("notes") / "intermediate" / run_id
+    if not note_dir.exists():
+        return ""
+    try:
+        paths = sorted(
+            (p for p in note_dir.glob("*.md") if p.is_file()),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    except Exception:
+        return ""
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except Exception:
+            continue
+        if text:
+            return text
+    return ""
 
 
 def list_runs(limit: int = 40) -> list[dict]:
@@ -98,9 +176,20 @@ def load_view(run_id: str) -> dict | None:
             note = Path(saved).read_text(encoding="utf-8") or note
         except Exception:
             pass
+    if not note.strip():
+        note = _latest_intermediate_note(run_id)
+
+    trace, event_queries = _load_trace_and_queries(run_dir)
+    snapshot_queries = snap.get("reference_queries", []) or snap.get("used_reference_queries", []) or []
+
+    status = meta.get("status", "done")
+    if status == "cancelled":
+        status = "error"
+    if _is_stale_running(meta):
+        status = "error"
 
     return {
-        "status": "error" if meta.get("status") == "error" else "done",
+        "status": status,
         "mode": "fixed",
         "task": {"text": meta.get("raw_input_preview", ""), "files": [], "urls": []},
         "params": {}, "settings": {
@@ -113,10 +202,25 @@ def load_view(run_id: str) -> dict | None:
         "iteration": snap.get("iteration_count", 0),
         "max_iterations": meta.get("max_iterations", 0),
         "live_text": "", "final_note": note,
+        "note_type": snap.get("note_type", ""),
+        "note_outline": snap.get("note_outline", []) or [],
         "sources": _norm_sources(snap.get("sources", []) or []),
-        "usage": {}, "trace": [],
+        "reference_queries": _norm_queries(event_queries + _norm_queries(snapshot_queries)),
+        "failed_sources": snap.get("failed_sources", []) or [],
+        "intermediate_paths": snap.get("intermediate_paths", []) or [],
+        "asset_paths": snap.get("asset_paths", []) or [],
+        "asset_errors": snap.get("asset_errors", []) or [],
+        "saved_path": saved,
+        "notion_url": meta.get("notion_url", "") or snap.get("notion_url", ""),
+        "usage": snap.get("usage", {}) or {}, "trace": trace,
+        "agent_outputs": [],
         "run_id": run_id, "run_log_dir": str(run_dir.resolve()),
         "error": meta.get("error", ""), "readonly": True,
+        "_current_output": None, "_output_seq": 0,
+        "_done_state": {
+            "saved_path": saved,
+            "notion_url": meta.get("notion_url", "") or snap.get("notion_url", ""),
+        },
     }
 
 

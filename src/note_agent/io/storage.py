@@ -79,6 +79,15 @@ def finish_run(
     write_json(run_path, data)
 
 
+def heartbeat_run(run_id: str) -> None:
+    """Touch a running run so the UI can distinguish live work from stale runs."""
+    run_path = get_run_dir(run_id) / "run.json"
+    data = read_json(run_path) if run_path.exists() else {"run_id": run_id}
+    if data.get("status") == "running":
+        data["updated_at"] = now_iso()
+        write_json(run_path, data)
+
+
 def append_event(run_id: str, event: dict[str, Any]) -> None:
     event_path = get_run_dir(run_id) / "events.jsonl"
     payload = {"created_at": now_iso(), **to_plain_data(event)}
@@ -91,6 +100,7 @@ _SNAPSHOT_KEYS = (
     "iteration_count", "llm_provider", "search_api",
     "reference_queries", "used_reference_queries", "sources",
     "failed_sources",
+    "usage",
     "saved_path", "notion_url", "intermediate_paths", "asset_paths", "asset_plan",
     "asset_errors",
 )

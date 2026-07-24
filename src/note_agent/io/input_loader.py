@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 
+from note_agent.net import call_with_retries
+
 
 SUPPORTED_TEXT_SUFFIXES = {".txt", ".md"}
 
@@ -64,7 +66,12 @@ def fetch_webpage_text(url: str, timeout: int = 20) -> str:
         )
     }
 
-    response = requests.get(url, headers=headers, timeout=timeout)
+    response = call_with_retries(
+        lambda: requests.get(url, headers=headers, timeout=timeout),
+        attempts=3,
+        delay_seconds=1.0,
+        label=f"webpage fetch {url}",
+    )
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")

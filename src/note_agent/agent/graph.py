@@ -1,4 +1,5 @@
 import json
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 
@@ -54,6 +55,12 @@ def infer_type_and_outline(state: NoteResearchState):
         stream=False,
     )
     note_type, outline = parse_note_structure(text)
+    emit_event(
+        "info",
+        text=f"Note structure ready: type={note_type}; sections={len(outline)}",
+        note_type=note_type,
+        note_outline=outline,
+    )
     return {"note_type": note_type, "note_outline": outline}
 
 
@@ -152,6 +159,27 @@ def generate_reference_queries(state: NoteResearchState):
     reference_queries = reference_queries[:query_limit]
     used_query_texts = used_query_texts[:query_limit]
 
+    if reference_queries:
+        lines = []
+        for item in reference_queries:
+            source_types = ", ".join(item.get("source_types", []))
+            reason = item.get("reason", "")
+            suffix = f" [{source_types}]" if source_types else ""
+            if reason:
+                suffix += f" - {reason}"
+            lines.append(f"- {item.get('query', '')}{suffix}")
+        emit_event(
+            "info",
+            text="Generated reference queries:\n" + "\n".join(lines),
+            reference_queries=reference_queries,
+        )
+    else:
+        emit_event(
+            "info",
+            text="No new reference queries generated.",
+            reference_queries=[],
+        )
+
     return {
         "reference_queries": reference_queries,
         "used_reference_queries": state.get("used_reference_queries", []) + used_query_texts,
@@ -216,6 +244,46 @@ def retrieve_references_node(state: NoteResearchState):
                 evidence_items.extend(results)
                 sources.extend(collect_reference_urls(results))
                 failed_sources.extend(failures)
+
+    source_counts = Counter(
+        item.source_name or item.source_type or "unknown"
+        for item in current_round_results
+    )
+    source_summary = ", ".join(
+        f"{name}:{count}" for name, count in sorted(source_counts.items())
+    ) or "none"
+    emit_event(
+        "info",
+        text=(
+            f"Retrieval summary: total={len(current_round_results)}; "
+            f"sources={source_summary}"
+        ),
+    )
+    if failed_sources:
+        emit_event(
+            "warning",
+            text=f"Retrieval failures recorded: {len(failed_sources)}",
+            failed_sources=failed_sources,
+        )
+
+    web_requested = any("web" in rq.source_types for rq in queries)
+    web_result_count = source_counts.get(state["search_api"], 0)
+    if not web_requested:
+        emit_event(
+            "info",
+            text=(
+                f"Web backend '{state['search_api']}' was not called because "
+                "no generated query requested source_type='web'."
+            ),
+        )
+    elif web_result_count == 0:
+        emit_event(
+            "warning",
+            text=(
+                f"Web backend '{state['search_api']}' was requested but returned "
+                "no recorded results; check failed_sources."
+            ),
+        )
 
     return {
         "reference_results": current_round_results,
@@ -397,6 +465,11 @@ def save_markdown_node(state: NoteResearchState):
             "asset_paths": state.get("asset_paths", []),
             "sources": state.get("sources", []),
         },
+    )
+    emit_event(
+        "info",
+        text=f"Markdown saved: {saved_path}",
+        saved_path=saved_path,
     )
 
     return {"saved_path": saved_path, "note_title": title}

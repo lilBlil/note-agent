@@ -226,7 +226,9 @@ def output_canvas(placeholder, view: dict) -> None:
         st.markdown('<div class="na-eyebrow">生成内容 · Output</div>', unsafe_allow_html=True)
         raw = view.get("final_note") or view.get("live_text") or ""
         note = strip_sources(raw)
-        if note.strip():
+        if view["status"] == "running" and view.get("agent_outputs"):
+            _render_agent_outputs(view.get("agent_outputs") or [])
+        elif note.strip():
             _markdown_with_mermaid(note)
         elif view["status"] == "running":
             if view["mode"] == "react":
@@ -285,16 +287,158 @@ def download_bar(view: dict) -> None:
     )
 
 
+def _render_trace(trace: list[dict]) -> None:
+    if not trace:
+        st.caption("暂无活动记录。")
+        return
+    rows = []
+    for item in trace[-80:]:
+        kind = item.get("type", "")
+        node = item.get("node", "")
+        text = _clean(str(item.get("text", "")))
+        prefix = f"`{html.escape(node)}` " if node else ""
+        rows.append(f"- **{html.escape(kind)}** {prefix}{html.escape(text)}")
+    st.markdown("\n".join(rows))
+
+
+def _render_queries(queries: list) -> None:
+    if not queries:
+        st.caption("暂无生成的检索查询。")
+        return
+    rows = []
+    for q in queries:
+        if isinstance(q, dict):
+            query = str(q.get("query", ""))
+            source_types = ", ".join(q.get("source_types", []) or [])
+            reason = str(q.get("reason", ""))
+        else:
+            query, source_types, reason = str(q), "", ""
+        suffix = f" `{html.escape(source_types)}`" if source_types else ""
+        line = f"- {html.escape(query)}{suffix}"
+        if reason:
+            line += f"\n  \n  {html.escape(reason)}"
+        rows.append(line)
+    st.markdown("\n".join(rows))
+
+
+def _source_text(source) -> str:
+    if isinstance(source, dict):
+        title = str(source.get("title") or source.get("name") or source.get("url") or source)
+        url = str(source.get("url") or source.get("link") or source.get("href") or "")
+        return f"[{title}]({url})" if url else title
+    text = str(source)
+    return f"<{text}>" if text.startswith(("http://", "https://")) else html.escape(text)
+
+
+def _render_sources(sources: list) -> None:
+    if not sources:
+        st.caption("暂无来源。")
+        return
+    st.markdown("\n".join(f"- {_source_text(s)}" for s in sources))
+
+
+def _latest_trace_match(view: dict, needles: tuple[str, ...]) -> str:
+    for item in reversed(view.get("trace") or []):
+        text = str(item.get("text", ""))
+        if any(needle in text for needle in needles):
+            return text
+    return ""
+
+
+def _render_retrieval_resources(view: dict) -> None:
+    search_api = (view.get("settings") or {}).get("search", "") or "duckduckgo"
+    queries = view.get("reference_queries") or []
+    sources = view.get("sources") or []
+    failures = view.get("failed_sources") or []
+    summary = _latest_trace_match(view, ("Retrieval summary:", "Web backend ", "检索失败："))
+
+    st.markdown(f"**检索后端**: `{html.escape(str(search_api))}`")
+    if summary:
+        st.caption(summary)
+    st.markdown("**检索查询**")
+    _render_queries(queries)
+    st.markdown("**来源链接**")
+    _render_sources(sources)
+    if failures:
+        st.markdown("**失败源**")
+        _render_failures(failures)
+
+
+def _render_agent_outputs(outputs: list[dict]) -> None:
+    if not outputs:
+        st.caption("等待 Agent 输出…")
+        return
+
+    current = next((item for item in reversed(outputs) if item.get("status") == "running"), None)
+    current = current or outputs[-1]
+    recent = [item for item in outputs[-6:] if item is not current]
+    visible = [current] + recent
+    for idx, item in enumerate(visible):
+        label = _clean(str(item.get("label", "") or item.get("node", "") or "Agent"))
+        status = item.get("status", "")
+        status_text = {"running": "进行中", "done": "已完成", "error": "出错"}.get(status, status)
+        st.markdown(f"#### {html.escape(label)} · {html.escape(status_text)}")
+
+        content = strip_sources(item.get("content") or "")
+        if content.strip():
+            preview = content if item.get("status") == "running" else content[:1600]
+            _markdown_with_mermaid(preview)
+
+        messages = [_clean(str(m)) for m in item.get("messages", []) if _clean(str(m))]
+        if messages:
+            st.markdown("\n".join(f"- {html.escape(m)}" for m in messages[-6:]))
+        elif not content.strip():
+            st.caption("正在等待该阶段返回结果…")
+
+        if idx != len(visible) - 1:
+            st.divider()
+
+
+def _render_failures(failures: list[dict]) -> None:
+    if not failures:
+        st.caption("暂无失败源。")
+        return
+    rows = []
+    for f in failures:
+        query = str(f.get("query", ""))
+        source = str(f.get("source_name", "") or f.get("source_type", ""))
+        error = str(f.get("error", ""))
+        rows.append(
+            f"- **{html.escape(source)}** {html.escape(query)}\n  \n  {html.escape(error)}"
+        )
+    st.markdown("\n".join(rows))
+
+
+def _render_artifacts(view: dict) -> None:
+    items = []
+    done_state = view.get("_done_state") or {}
+    saved = view.get("saved_path") or done_state.get("saved_path") or ""
+    if saved:
+        items.append(f"- **最终 Markdown**: `{saved}`")
+    for path in view.get("intermediate_paths") or []:
+        items.append(f"- **中间稿**: `{path}`")
+    for path in view.get("asset_paths") or []:
+        items.append(f"- **资产**: `{path}`")
+    notion_url = view.get("notion_url") or done_state.get("notion_url") or ""
+    if notion_url:
+        items.append(f"- **Notion**: {notion_url}")
+    if items:
+        st.markdown("\n".join(items))
+    else:
+        st.caption("暂无产物记录。")
+
+    errors = view.get("asset_errors") or []
+    if errors:
+        st.markdown("**资产错误**")
+        st.json(errors, expanded=False)
+
+
 def details_panel(view: dict) -> None:
-    """Collapsed-by-default '详细信息': sources + token usage only."""
+    """Collapsed-by-default panel for retrieval resources and token usage."""
     with st.expander("详细信息", expanded=False):
-        with st.container(height=280):
-            tabs = st.tabs(["资源", "Token 用量"])
+        with st.container(height=320):
+            tabs = st.tabs(["检索资源", "Token 用量"])
             with tabs[0]:
-                srcs = view.get("sources") or []
-                if srcs:
-                    st.markdown("\n".join(f"- {s}" for s in srcs))
-                else:
-                    st.caption("暂无来源。")
+                _render_retrieval_resources(view)
             with tabs[1]:
                 st.markdown("\n\n".join(_usage_lines(view.get("usage") or {})))
