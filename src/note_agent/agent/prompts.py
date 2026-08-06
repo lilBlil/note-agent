@@ -150,6 +150,29 @@ def generate_initial_note_prompt(raw_input: str, note_type: str, outline: str) -
 """
 
 
+def generate_final_note_prompt(raw_input: str, note_type: str, outline: str) -> str:
+    return f"""
+基于用户输入，直接生成可发布的最终技术笔记。
+
+用户输入：
+{raw_input}
+
+笔记类型：
+{note_type}
+
+笔记结构：
+{outline}
+
+写作要求：
+1. 第一行必须是 `#` 开头的一行标题。
+2. 严格遵循给定结构，生成完整、连贯的正文。
+3. 需要解释原理、推导、权衡或例子时，直接写清楚。
+4. 不要提草稿、修订、检索或审核流程。
+5. 不要编造来源、引文或无法验证的精确事实。
+6. 只输出最终 Markdown 正文，不要输出说明文字。
+"""
+
+
 def generate_reference_queries_prompt(current_note: str, used_queries: list[str]) -> str:
     used_text = "\n".join(f"- {q}" for q in used_queries) if used_queries else "暂无"
 

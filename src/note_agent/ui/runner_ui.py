@@ -7,6 +7,8 @@ workflow itself is never modified.
 
 from __future__ import annotations
 
+import time
+
 from note_agent.ui import render, state
 
 
@@ -298,18 +300,35 @@ def execute_stream(view: dict, status_ph, output_ph, details_ph=None) -> None:
     _render_details(details_ph, view)
 
     fatal = False
+    last_token_render = 0.0
+    pending_token_render = False
     try:
         for event in stream_note_agent_events(request, mode=mode):
             _fold_event(view, event)
+            is_token = event.get("type") == "token"
+            if is_token:
+                pending_token_render = True
+                now = time.monotonic()
+                if now - last_token_render < 0.1:
+                    continue
+
             render.status_panel(status_ph, view)
             render.output_canvas(output_ph, view)
-            _render_details(details_ph, view)
+            if not is_token:
+                _render_details(details_ph, view)
+            else:
+                last_token_render = time.monotonic()
+                pending_token_render = False
             if event.get("type") == "error" and event.get("fatal", True):
                 fatal = True
                 break
     except Exception as exc:
         view["error"] = f"运行异常：{exc}"
         fatal = True
+
+    if pending_token_render:
+        render.status_panel(status_ph, view)
+        render.output_canvas(output_ph, view)
 
     state.finish(view, "error" if (fatal or view.get("error")) else "done")
     _finish_agent_outputs(view, "error" if (fatal or view.get("error")) else "done")

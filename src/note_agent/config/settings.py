@@ -15,7 +15,7 @@ from note_agent.config.runtime import llm_request_timeout, llm_stream_chunk_time
 load_dotenv()
 
 MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
-    "deepseek": {"model": "deepseek-v4-pro", "api_key_env": "DEEPSEEK_API_KEY", "base_url": None},
+    "deepseek": {"model": "deepseek-v4-flash", "api_key_env": "DEEPSEEK_API_KEY", "base_url": None},
     "openai": {"model": "gpt-4o", "api_key_env": "OPENAI_API_KEY", "base_url": None},
     "anthropic": {
         "model": "claude-sonnet-4-20250514",
@@ -28,7 +28,7 @@ MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     },
     "moonshot": {
-        "model": "moonshot-v1-128k",
+        "model": "kimi-k3",
         "api_key_env": "MOONSHOT_API_KEY",
         "base_url": "https://api.moonshot.cn/v1",
     },
@@ -61,10 +61,18 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
     if not api_key:
         raise ValueError(f"Missing {cfg['api_key_env']} — check .env")
 
-    # Only include stream_options for streaming calls (not tool calls)
-    model_kwargs = {} if for_tools else {"stream_options": {"include_usage": True}}
-    timeout = llm_request_timeout()
-    chunk_timeout = llm_stream_chunk_timeout()
+    # Kimi's OpenAI-compatible endpoint works best with a plain streaming request.
+    model_kwargs = (
+        {}
+        if for_tools or provider == "moonshot"
+        else {"stream_options": {"include_usage": True}}
+    )
+    if provider == "moonshot":
+        timeout = llm_request_timeout(180)
+        chunk_timeout = llm_stream_chunk_timeout(60)
+    else:
+        timeout = llm_request_timeout()
+        chunk_timeout = llm_stream_chunk_timeout()
 
     if provider == "deepseek":
         return ChatDeepSeek(
@@ -84,15 +92,21 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
             timeout=timeout,
             max_retries=0,
         )
+    temperature = None if provider == "moonshot" else 0
+    openai_kwargs = {}
+    if provider == "moonshot" and str(cfg["model"]).startswith("kimi-k3"):
+        openai_kwargs["reasoning_effort"] = os.getenv("MOONSHOT_REASONING_EFFORT", "low")
+
     return ChatOpenAI(
         model=str(cfg["model"]),
         api_key=api_key,
         base_url=str(cfg["base_url"] or ""),
-        temperature=0,
+        temperature=temperature,
         model_kwargs=model_kwargs,
         timeout=timeout,
         max_retries=0,
         stream_chunk_timeout=chunk_timeout,
+        **openai_kwargs,
     )
 
 

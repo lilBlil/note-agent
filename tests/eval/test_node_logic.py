@@ -21,6 +21,7 @@ import pytest
 from note_agent.agent.graph import (
     build_graph,
     finalize_note,
+    generate_final_note,
     generate_initial_note,
     generate_note_assets,
     generate_reference_queries,
@@ -183,6 +184,17 @@ class TestGenerateInitialNote:
         with mock_entire_pipeline([note_md]):
             result = generate_initial_note(base_state)
         assert "```python" in result["current_note"]
+
+
+class TestGenerateFinalNote:
+    def test_direct_generation_sets_final_note(self, base_state) -> None:
+        final = "# Final Note\n\n## Content\nDirectly generated."
+        with mock_entire_pipeline([final]):
+            result = generate_final_note(base_state)
+        assert result["current_note"] == final
+        assert result["final_note"] == final
+        assert result["iteration_count"] == 0
+        assert result["intermediate_paths"] == ["/tmp/mock_note.md"]
 
 
 # ============================================================================
@@ -476,7 +488,7 @@ class TestGraphBuild:
         graph = build_graph()
         node_names = set(graph.nodes.keys())
         expected = {
-            "infer_type_and_outline", "generate_initial_note",
+            "infer_type_and_outline", "generate_final_note", "generate_initial_note",
             "generate_reference_queries", "retrieve_references",
             "verify_and_refine", "finalize_note",
             "plan_note_assets", "generate_note_assets",
@@ -495,18 +507,16 @@ class TestPipelineSmoke:
         """Simulate a complete pipeline run with mocked LLM at each step.
 
         Pipeline path (max_iterations=0, assets=off, notion=off):
-        infer → generate → finalize → save → END
+        infer → direct-final → save → END
         """
         base_state["max_iterations"] = 0
         base_state["enable_assets"] = False  # skip asset nodes
         base_state["enable_notion"] = False
 
-        # 4 LLM calls: infer + generate + finalize + title
+        # 2 LLM calls: infer + direct final note
         responses = [
             json.dumps({"note_type": "学习笔记", "outline": [{"title": "概述", "purpose": "简介"}]}, ensure_ascii=False),
-            "# Test Note\n\n## 概述\nThis is a test.",
-            "# Test Note\n\n## 概述\nFinalized content.",
-            "TestNote",
+            "# Test Note\n\n## 概述\nFinal content.",
         ]
 
         with mock_graph_io():
@@ -520,5 +530,5 @@ class TestPipelineSmoke:
                     result = graph.invoke(base_state)
 
         assert result["note_type"] == "学习笔记"
-        assert result["current_note"] == "# Test Note\n\n## 概述\nThis is a test."
-        assert result["final_note"] == "# Test Note\n\n## 概述\nFinalized content."
+        assert result["current_note"] == "# Test Note\n\n## 概述\nFinal content."
+        assert result["final_note"] == "# Test Note\n\n## 概述\nFinal content."

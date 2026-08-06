@@ -94,12 +94,12 @@ def _count_pipeline_invocations(case_id: str, max_iterations: int, enable_assets
               → [plan → generate_assets → assemble → ] save → [notion]
 
     Key: N = max_iterations
-    - Non-search path (max_iterations=0): infer + generate + finalize + title = 4
-    - Search path (max_iterations>0): 4 + N * 2 (queries + verify)
+    - Non-search path (max_iterations=0): infer + direct final = 2
+    - Search path (max_iterations>0): 3 + N * 2 (queries + verify)
     - Assets path (+enable_assets): +2 (plan + generate_assets)
     - Notion (+enable_notion): no extra LLM call
     """
-    base = 4  # infer + generate + finalize + title
+    base = 2 if max_iterations <= 0 else 3  # direct final, or draft + finalize
     if max_iterations > 0:
         base += max_iterations * 2  # queries + verify per iteration
     if enable_assets:

@@ -25,6 +25,7 @@ from note_agent.io.events import emit_event, emit_node_start
 from note_agent.io.text import derive_title, normalize_query, save_markdown
 from note_agent.agent.prompts import (
     finalize_note_prompt,
+    generate_final_note_prompt,
     generate_assets_prompt,
     generate_initial_note_prompt,
     generate_reference_queries_prompt,
@@ -88,6 +89,43 @@ def generate_initial_note(state: NoteResearchState):
 
     return {
         "current_note": note,
+        "iteration_count": 0,
+        "reference_queries": [],
+        "used_reference_queries": [],
+        "reference_results": [],
+        "evidence_items": [],
+        "sources": [],
+        "intermediate_paths": [intermediate_path],
+        "asset_plan": [],
+        "generated_assets": {},
+        "asset_paths": [],
+    }
+
+
+def generate_final_note(state: NoteResearchState):
+    emit_node_start("generate_final_note", "\u6b63\u5728\u751f\u6210\u6700\u7ec8\u7b14\u8bb0")
+    outline_text = json.dumps(state["note_outline"], ensure_ascii=False, indent=2)
+
+    final_note = ask_llm(
+        generate_final_note_prompt(
+            raw_input=state["raw_input"],
+            note_type=state["note_type"],
+            outline=outline_text,
+        ),
+        provider=state["llm_provider"],
+        stream=True,
+    )
+
+    intermediate_path = save_intermediate_note(
+        state["run_id"],
+        "final_direct",
+        final_note,
+    )
+    emit_event("info", text=f"Direct final note saved: {intermediate_path}")
+
+    return {
+        "current_note": final_note,
+        "final_note": final_note,
         "iteration_count": 0,
         "reference_queries": [],
         "used_reference_queries": [],
@@ -519,6 +557,7 @@ def build_graph():
     builder = StateGraph(NoteResearchState)
 
     builder.add_node("infer_type_and_outline", infer_type_and_outline)
+    builder.add_node("generate_final_note", generate_final_note)
     builder.add_node("generate_initial_note", generate_initial_note)
     builder.add_node("generate_reference_queries", generate_reference_queries)
     builder.add_node("retrieve_references", retrieve_references_node)
@@ -531,11 +570,20 @@ def build_graph():
     builder.add_node("publish_notion", publish_notion_node)
 
     builder.add_edge(START, "infer_type_and_outline")
-    builder.add_edge("infer_type_and_outline", "generate_initial_note")
+    builder.add_conditional_edges(
+        "infer_type_and_outline",
+        lambda state: "direct" if state["max_iterations"] <= 0 else "draft",
+        {"direct": "generate_final_note", "draft": "generate_initial_note"},
+    )
     builder.add_conditional_edges(
         "generate_initial_note",
         route_after_initial_note,
         {"continue": "generate_reference_queries", "finalize": "finalize_note"},
+    )
+    builder.add_conditional_edges(
+        "generate_final_note",
+        route_after_finalize,
+        {"assets": "plan_note_assets", "save": "save_markdown"},
     )
     builder.add_edge("generate_reference_queries", "retrieve_references")
     builder.add_edge("retrieve_references", "verify_and_refine")

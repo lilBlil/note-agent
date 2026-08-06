@@ -28,6 +28,7 @@ _ASSET_STAGES: list[tuple[str, str]] = [
     ("publish_notion", "发布 Notion"),
 ]
 NODE_LABELS = dict(PIPELINE + _ASSET_STAGES)
+NODE_LABELS["generate_final_note"] = "\u76f4\u63a5\u751f\u6210\u6700\u7ec8\u7b14\u8bb0"
 
 
 def new_view(*, mode: str, task: dict, params: dict, settings: dict) -> dict:

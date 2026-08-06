@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+from note_agent.config.runtime import llm_stream_chunk_timeout
 from note_agent.config.settings import get_model
 from note_agent.net import call_with_retries
+
+_STREAM_END = object()
 
 
 def _extract_usage(response) -> tuple[int, int]:
@@ -31,6 +37,39 @@ def _invoke_with_retries(model, prompt: str):
         delay_seconds=1.0,
         label="LLM request",
     )
+
+
+def _next_stream_chunk(iterator):
+    try:
+        return next(iterator)
+    except StopIteration:
+        return _STREAM_END
+
+
+def _stream_with_timeout(model, prompt: str, timeout_seconds: int):
+    iterator = model.stream(prompt)
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        while True:
+            future = executor.submit(_next_stream_chunk, iterator)
+            try:
+                chunk = future.result(timeout=timeout_seconds)
+            except FutureTimeoutError as error:
+                future.cancel()
+                raise TimeoutError(
+                    f"no stream chunk received within {timeout_seconds}s"
+                ) from error
+            if chunk is _STREAM_END:
+                break
+            yield chunk
+    finally:
+        close = getattr(iterator, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> str:
@@ -61,8 +100,11 @@ def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> st
     input_tokens = 0
     output_tokens = 0
     should_print = not has_event_handler()
+    chunk_timeout = llm_stream_chunk_timeout(60 if provider == "moonshot" else 15)
+    stream_started_at = time.monotonic()
+    empty_chunk_notice_sent = False
     try:
-        for chunk in llm.stream(prompt):
+        for chunk in _stream_with_timeout(llm, prompt, chunk_timeout):
             in_tok, out_tok = _extract_usage(chunk)
             input_tokens = input_tokens or in_tok
             output_tokens = output_tokens or out_tok
@@ -76,6 +118,14 @@ def ask_llm(prompt: str, provider: str = "deepseek", stream: bool = False) -> st
                     except UnicodeEncodeError:
                         pass
                 chunks.append(chunk.content)
+            elif (
+                provider == "moonshot"
+                and not chunks
+                and not empty_chunk_notice_sent
+                and time.monotonic() - stream_started_at >= 8
+            ):
+                emit_event("info", text="\u6a21\u578b\u6b63\u5728\u63a8\u7406\uff0c\u7b49\u5f85\u6b63\u6587\u8f93\u51fa...")
+                empty_chunk_notice_sent = True
     except Exception as error:
         emit_event(
             "warning",

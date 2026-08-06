@@ -105,7 +105,7 @@ CLI 会依次询问输入内容、文件路径、网页 URL、迭代次数、LLM
 | `openai` | `OPENAI_API_KEY` | `gpt-4o` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` |
 | `qwen` | `DASHSCOPE_API_KEY` | `qwen-max` |
-| `moonshot` | `MOONSHOT_API_KEY` | `moonshot-v1-128k` |
+| `moonshot` | `MOONSHOT_API_KEY` | `kimi-k3` |
 | `zhipu` | `ZHIPU_API_KEY` | `glm-4-plus` |
 | `siliconflow` | `SILICONFLOW_API_KEY` | `deepseek-ai/DeepSeek-V3` |
 
