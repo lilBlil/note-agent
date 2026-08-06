@@ -13,6 +13,7 @@ from note_agent.io.events import emit_event, emit_node_start
 
 
 _TOOL_NODE = ToolNode(ALL_TOOLS)
+_RESEARCH_LOOP_TOOLS = {"search_references", "refine_note_with_references"}
 
 
 @lru_cache(maxsize=8)
@@ -39,6 +40,28 @@ def _dedupe_sources(items: list) -> list:
             seen.add(key)
             out.append(it)
     return out
+
+
+def _research_budget_exhausted(state: NoteResearchState) -> bool:
+    return (
+        bool(state.get("current_note"))
+        and not state.get("final_note")
+        and state.get("iteration_count", 0) >= state.get("max_iterations", 0)
+    )
+
+
+def _finalize_tool_call(state: NoteResearchState, call_id: str) -> AIMessage:
+    return AIMessage(
+        content="Research iteration budget reached; finalize the current note.",
+        tool_calls=[{
+            "name": "finalize_note_content",
+            "args": {
+                "current_note": state["current_note"],
+                "sources": state.get("sources", []),
+            },
+            "id": call_id,
+        }],
+    )
 
 
 def _agent_phase_label(state: NoteResearchState) -> str:
@@ -108,10 +131,31 @@ def create_agent_node(state: NoteResearchState):
     # Call LLM
     response = _bound_tool_model(state["llm_provider"]).invoke(messages)
 
+    if response.tool_calls and _research_budget_exhausted(state):
+        requested = {call.get("name", "") for call in response.tool_calls}
+        if requested & _RESEARCH_LOOP_TOOLS:
+            emit_event(
+                "warning",
+                text=(
+                    "ReAct research iteration budget reached; "
+                    "skipping further search/refine calls and finalizing."
+                ),
+            )
+            response = _finalize_tool_call(state, "auto_finalize_budget")
+
     # Check if task is complete
     if not response.tool_calls:
         # Agent decided not to call any tool - check if we're done
-        if state.get("saved_path"):
+        if _research_budget_exhausted(state):
+            emit_event(
+                "warning",
+                text=(
+                    "ReAct research iteration budget reached without a tool call; "
+                    "finalizing current note."
+                ),
+            )
+            response = _finalize_tool_call(state, "auto_finalize_budget_no_tool")
+        elif state.get("saved_path"):
             if state.get("enable_notion") and not state.get("notion_url"):
                 # Should publish but agent didn't call tool - remind it
                 emit_event("warning", text="Agent 未调用发布工具，将自动补充")

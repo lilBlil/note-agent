@@ -47,9 +47,11 @@ def start_run(
     max_iterations: int,
     enable_assets: bool = False,
     enable_notion: bool = False,
+    mode: str = "fixed",
 ) -> None:
     record = RunRecord(
         run_id=run_id,
+        mode=mode,
         status="running",
         raw_input_preview=raw_input[:300],
         llm_provider=llm_provider,
@@ -100,6 +102,7 @@ _SNAPSHOT_KEYS = (
     "iteration_count", "llm_provider", "search_api",
     "reference_queries", "used_reference_queries", "sources",
     "failed_sources",
+    "failed_urls",
     "usage",
     "saved_path", "notion_url", "intermediate_paths", "asset_paths", "asset_plan",
     "asset_errors",

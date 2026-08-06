@@ -50,6 +50,7 @@ def new_view(*, mode: str, task: dict, params: dict, settings: dict) -> dict:
         "sources": [],
         "reference_queries": [],
         "failed_sources": [],
+        "failed_urls": [],
         "intermediate_paths": [],
         "asset_paths": [],
         "asset_errors": [],

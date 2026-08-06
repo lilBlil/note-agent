@@ -42,9 +42,10 @@ def build_response(result: dict[str, Any]) -> NoteAgentResponse:
     )
 
 
-def _start_request_run(request: NoteAgentRequest, run_id: str) -> None:
+def _start_request_run(request: NoteAgentRequest, run_id: str, mode: str) -> None:
     start_run(
         run_id=run_id,
+        mode=mode,
         raw_input=request.raw_input,
         llm_provider=request.llm_provider,
         search_api=request.search_api,
@@ -59,12 +60,13 @@ def run_agent(
     *,
     graph_factory: GraphFactory,
     state_factory: StateFactory,
+    mode: str = "fixed",
 ) -> NoteAgentResponse:
     """Run a graph synchronously and handle run bookkeeping."""
     reset_usage()
     run_id = new_run_id()
     initial_state = state_factory(request, run_id)
-    _start_request_run(request, run_id)
+    _start_request_run(request, run_id, mode)
 
     def handler(event: dict[str, Any]) -> None:
         if event.get("type") != "token":
@@ -96,11 +98,12 @@ def stream_agent_events(
     graph_factory: GraphFactory,
     state_factory: StateFactory,
     progress_event_factory: ProgressEventFactory | None = None,
+    mode: str = "fixed",
 ) -> Iterator[dict[str, Any]]:
     """Run a graph in a worker thread and stream UI/CLI events."""
     run_id = new_run_id()
     initial_state = state_factory(request, run_id)
-    _start_request_run(request, run_id)
+    _start_request_run(request, run_id, mode)
 
     q: Queue[dict[str, Any]] = Queue()
     stop = Event()

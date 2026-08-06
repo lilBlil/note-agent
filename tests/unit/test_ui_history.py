@@ -125,3 +125,41 @@ def test_load_view_keeps_running_status_and_usage(tmp_path, monkeypatch) -> None
     assert view["status"] == "running"
     assert view["usage"]["total_tokens"] == 123
     assert view["reference_queries"][0]["query"] == "RAG"
+
+
+def test_load_view_restores_react_mode(tmp_path, monkeypatch) -> None:
+    runs_dir = tmp_path / "runs"
+    monkeypatch.setattr(history, "_RUNS", runs_dir)
+    _write_run(runs_dir, "run_react", mode="react")
+
+    view = history.load_view("run_react")
+
+    assert view is not None
+    assert view["mode"] == "react"
+
+
+def test_load_view_restores_failed_urls(tmp_path, monkeypatch) -> None:
+    runs_dir = tmp_path / "runs"
+    monkeypatch.setattr(history, "_RUNS", runs_dir)
+    _write_run(runs_dir, "run_urls")
+    run_dir = runs_dir / "run_urls"
+    (run_dir / "final_state.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run_urls",
+                "failed_urls": [
+                    {"url": "https://example.com/bad", "error": "fetch failed"}
+                ],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    view = history.load_view("run_urls")
+
+    assert view is not None
+    assert view["failed_urls"] == [
+        {"url": "https://example.com/bad", "error": "fetch failed"}
+    ]

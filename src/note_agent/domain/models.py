@@ -111,6 +111,7 @@ class RunRecord(BaseModel):
 
     run_id: str
     status: Literal["running", "success", "error", "cancelled"] = "running"
+    mode: str = "fixed"
     raw_input_preview: str = ""
     llm_provider: str = ""
     search_api: str = ""

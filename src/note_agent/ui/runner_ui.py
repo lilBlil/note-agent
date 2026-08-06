@@ -128,6 +128,27 @@ def _finish_agent_outputs(view: dict, status: str) -> None:
             item["status"] = status
 
 
+def _persist_failed_urls(view: dict) -> None:
+    failed_urls = view.get("failed_urls") or []
+    run_log_dir = view.get("run_log_dir") or ""
+    if not failed_urls or not run_log_dir:
+        return
+
+    from pathlib import Path
+
+    from note_agent.io.storage import read_json, write_json
+
+    path = Path(run_log_dir) / "final_state.json"
+    if not path.exists():
+        return
+    try:
+        data = read_json(path)
+    except Exception:
+        return
+    data["failed_urls"] = failed_urls
+    write_json(path, data)
+
+
 def build_combined_input(params: dict, view: dict):
     """Assemble the agent's raw_input from text + file bytes + fetched URLs."""
     from note_agent.io.input_loader import (
@@ -136,6 +157,7 @@ def build_combined_input(params: dict, view: dict):
         read_uploaded_text_file,
     )
 
+    failed_urls: list[dict[str, str]] = []
     file_texts: list[tuple[str, str]] = []
     for name, data in params.get("file_texts", []):
         file_texts.append((name, read_uploaded_text_file(name, data)))
@@ -144,11 +166,19 @@ def build_combined_input(params: dict, view: dict):
     for url in params.get("urls", []):
         try:
             webpage_texts.append((url, fetch_webpage_text(url)))
-        except Exception:  # non-fatal: skip the bad URL
-            pass
+        except Exception as exc:  # non-fatal: skip the bad URL, but surface it
+            failed_urls.append({"url": str(url), "error": str(exc)})
+
+    view["failed_urls"] = failed_urls
+    manual_text = str(params.get("manual_text", ""))
+    if failed_urls and not (manual_text.strip() or file_texts or webpage_texts):
+        sample = "; ".join(
+            f"{item['url']}: {item['error']}" for item in failed_urls[:3]
+        )
+        raise ValueError(f"网页 URL 抓取失败，且没有其他可用输入：{sample}")
 
     return _combine(
-        manual_text=params.get("manual_text", ""),
+        manual_text=manual_text,
         file_texts=file_texts,
         webpage_texts=webpage_texts,
     )
@@ -225,6 +255,7 @@ def _fold_event(view: dict, event: dict) -> None:
             (view.get("reference_queries") or []) + _norm_queries(queries)
         )
         view["failed_sources"] = st_.get("failed_sources", []) or view.get("failed_sources", [])
+        view["failed_urls"] = st_.get("failed_urls", []) or view.get("failed_urls", [])
         view["intermediate_paths"] = st_.get("intermediate_paths", []) or []
         view["asset_paths"] = st_.get("asset_paths", []) or []
         view["asset_errors"] = st_.get("asset_errors", []) or []
@@ -332,6 +363,7 @@ def execute_stream(view: dict, status_ph, output_ph, details_ph=None) -> None:
 
     state.finish(view, "error" if (fatal or view.get("error")) else "done")
     _finish_agent_outputs(view, "error" if (fatal or view.get("error")) else "done")
+    _persist_failed_urls(view)
     render.status_panel(status_ph, view)
     render.output_canvas(output_ph, view)
     _render_details(details_ph, view)

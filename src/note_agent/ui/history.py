@@ -190,7 +190,7 @@ def load_view(run_id: str) -> dict | None:
 
     return {
         "status": status,
-        "mode": "fixed",
+        "mode": meta.get("mode", "fixed"),
         "task": {"text": meta.get("raw_input_preview", ""), "files": [], "urls": []},
         "params": {}, "settings": {
             "llm": meta.get("llm_provider", ""), "search": meta.get("search_api", ""),
@@ -207,6 +207,7 @@ def load_view(run_id: str) -> dict | None:
         "sources": _norm_sources(snap.get("sources", []) or []),
         "reference_queries": _norm_queries(event_queries + _norm_queries(snapshot_queries)),
         "failed_sources": snap.get("failed_sources", []) or [],
+        "failed_urls": snap.get("failed_urls", []) or [],
         "intermediate_paths": snap.get("intermediate_paths", []) or [],
         "asset_paths": snap.get("asset_paths", []) or [],
         "asset_errors": snap.get("asset_errors", []) or [],

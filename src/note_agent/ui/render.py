@@ -226,6 +226,7 @@ def output_canvas(placeholder, view: dict) -> None:
         st.markdown('<div class="na-eyebrow">生成内容 · Output</div>', unsafe_allow_html=True)
         raw = view.get("final_note") or view.get("live_text") or ""
         note = strip_sources(raw)
+        failed_urls = view.get("failed_urls") or []
         if view["status"] == "running" and view.get("agent_outputs"):
             _render_agent_outputs(view.get("agent_outputs") or [])
         elif note.strip():
@@ -239,6 +240,16 @@ def output_canvas(placeholder, view: dict) -> None:
             st.error(view.get("error") or "运行出错")
         else:
             st.caption("研究结果将显示在这里。")
+        if failed_urls:
+            sample_items = []
+            for item in failed_urls[:3]:
+                if isinstance(item, dict):
+                    sample_items.append(str(item.get("url") or item.get("link") or ""))
+                else:
+                    sample_items.append(str(item))
+            sample = "、".join(sample_items)
+            tail = "..." if len(failed_urls) > 3 else ""
+            st.warning(f"部分 URL 抓取失败，已跳过 {len(failed_urls)} 个：{sample}{tail}")
 
 
 def _usage_lines(usage: dict) -> list[str]:
@@ -350,6 +361,7 @@ def _render_retrieval_resources(view: dict) -> None:
     queries = view.get("reference_queries") or []
     sources = view.get("sources") or []
     failures = view.get("failed_sources") or []
+    failed_urls = view.get("failed_urls") or []
     summary = _latest_trace_match(view, ("Retrieval summary:", "Web backend ", "检索失败："))
 
     st.markdown(f"**检索后端**: `{html.escape(str(search_api))}`")
@@ -362,6 +374,9 @@ def _render_retrieval_resources(view: dict) -> None:
     if failures:
         st.markdown("**失败源**")
         _render_failures(failures)
+    if failed_urls:
+        st.markdown("**输入 URL 失败**")
+        _render_failed_urls(failed_urls)
 
 
 def _render_agent_outputs(outputs: list[dict]) -> None:
@@ -406,6 +421,24 @@ def _render_failures(failures: list[dict]) -> None:
         rows.append(
             f"- **{html.escape(source)}** {html.escape(query)}\n  \n  {html.escape(error)}"
         )
+    st.markdown("\n".join(rows))
+
+
+def _render_failed_urls(failed_urls: list[dict]) -> None:
+    if not failed_urls:
+        return
+    rows = []
+    for item in failed_urls:
+        if isinstance(item, dict):
+            url = str(item.get("url") or item.get("link") or "")
+            error = str(item.get("error") or "")
+        else:
+            url = str(item)
+            error = ""
+        line = f"- `{html.escape(url)}`"
+        if error:
+            line += f"\n  \n  {html.escape(error)}"
+        rows.append(line)
     st.markdown("\n".join(rows))
 
 

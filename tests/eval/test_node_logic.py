@@ -86,6 +86,96 @@ class TestRouteFunctions:
         assert route_after_save(base_state) == "end"
 
 
+class TestReactBudgetGuards:
+    class _FakeToolModel:
+        def __init__(self, response):
+            self.response = response
+
+        def invoke(self, messages):
+            return self.response
+
+    def test_budget_exhausted_replaces_search_with_finalize(self, base_state, monkeypatch):
+        from langchain_core.messages import AIMessage
+        from note_agent.agent.graph_react import create_agent_node
+
+        base_state["current_note"] = "# Draft"
+        base_state["iteration_count"] = 1
+        base_state["max_iterations"] = 1
+        response = AIMessage(
+            content="search again",
+            tool_calls=[{
+                "name": "search_references",
+                "args": {"current_note": "# Draft", "used_queries": []},
+                "id": "call_search",
+            }],
+        )
+
+        monkeypatch.setattr(
+            "note_agent.agent.graph_react._bound_tool_model",
+            lambda provider: self._FakeToolModel(response),
+        )
+        monkeypatch.setattr("note_agent.agent.graph_react.emit_node_start", lambda *a, **k: None)
+        events = []
+        monkeypatch.setattr(
+            "note_agent.agent.graph_react.emit_event",
+            lambda event_type, **payload: events.append((event_type, payload)),
+        )
+
+        result = create_agent_node(base_state)
+
+        tool_call = result["messages"][0].tool_calls[0]
+        assert tool_call["name"] == "finalize_note_content"
+        assert tool_call["args"]["current_note"] == "# Draft"
+        assert any(event_type == "warning" for event_type, _ in events)
+
+    def test_budget_exhausted_without_tool_call_forces_finalize(self, base_state, monkeypatch):
+        from langchain_core.messages import AIMessage
+        from note_agent.agent.graph_react import create_agent_node
+
+        base_state["current_note"] = "# Draft"
+        base_state["iteration_count"] = 1
+        base_state["max_iterations"] = 1
+        response = AIMessage(content="done")
+
+        monkeypatch.setattr(
+            "note_agent.agent.graph_react._bound_tool_model",
+            lambda provider: self._FakeToolModel(response),
+        )
+        monkeypatch.setattr("note_agent.agent.graph_react.emit_node_start", lambda *a, **k: None)
+        monkeypatch.setattr("note_agent.agent.graph_react.emit_event", lambda *a, **k: None)
+
+        result = create_agent_node(base_state)
+
+        assert result["messages"][0].tool_calls[0]["name"] == "finalize_note_content"
+
+    def test_budget_available_keeps_search_tool_call(self, base_state, monkeypatch):
+        from langchain_core.messages import AIMessage
+        from note_agent.agent.graph_react import create_agent_node
+
+        base_state["current_note"] = "# Draft"
+        base_state["iteration_count"] = 0
+        base_state["max_iterations"] = 1
+        response = AIMessage(
+            content="search",
+            tool_calls=[{
+                "name": "search_references",
+                "args": {"current_note": "# Draft", "used_queries": []},
+                "id": "call_search",
+            }],
+        )
+
+        monkeypatch.setattr(
+            "note_agent.agent.graph_react._bound_tool_model",
+            lambda provider: self._FakeToolModel(response),
+        )
+        monkeypatch.setattr("note_agent.agent.graph_react.emit_node_start", lambda *a, **k: None)
+        monkeypatch.setattr("note_agent.agent.graph_react.emit_event", lambda *a, **k: None)
+
+        result = create_agent_node(base_state)
+
+        assert result["messages"][0].tool_calls[0]["name"] == "search_references"
+
+
 # ============================================================================
 # infer_type_and_outline node
 # ============================================================================

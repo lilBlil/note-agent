@@ -47,6 +47,7 @@ def run_note_agent_react(request: NoteAgentRequest) -> NoteAgentResponse:
         request,
         graph_factory=get_react_graph,
         state_factory=build_initial_state_react,
+        mode="react",
     )
 
 
@@ -57,4 +58,5 @@ def stream_note_agent_events_react(request: NoteAgentRequest):
         graph_factory=get_react_graph,
         state_factory=build_initial_state_react,
         progress_event_factory=_react_progress_event,
+        mode="react",
     )

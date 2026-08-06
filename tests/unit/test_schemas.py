@@ -20,6 +20,7 @@ from note_agent.domain.models import (
     now_iso,
 )
 from note_agent.domain.api import NoteAgentRequest, NoteAgentResponse
+from note_agent.io.storage import summarize_state
 
 
 class TestNowIso:
@@ -78,6 +79,20 @@ class TestBuildBaseState:
         assert state["messages"] == []
         assert state["failed_sources"] == []
         assert state["asset_errors"] == []
+
+
+class TestSummarizeState:
+    def test_includes_failed_urls(self) -> None:
+        summary = summarize_state(
+            {
+                "run_id": "r1",
+                "failed_urls": [{"url": "https://example.com", "error": "boom"}],
+            }
+        )
+
+        assert summary["failed_urls"] == [
+            {"url": "https://example.com", "error": "boom"}
+        ]
 
 
 class TestReferenceQuery:

@@ -23,6 +23,7 @@ def run_note_agent(request: NoteAgentRequest) -> NoteAgentResponse:
         request,
         graph_factory=get_graph,
         state_factory=build_initial_state,
+        mode="fixed",
     )
 
 
@@ -31,4 +32,5 @@ def stream_note_agent_events(request: NoteAgentRequest):
         request,
         graph_factory=get_graph,
         state_factory=build_initial_state,
+        mode="fixed",
     )
