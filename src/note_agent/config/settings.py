@@ -33,14 +33,9 @@ MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
         "base_url": "https://api.moonshot.cn/v1",
     },
     "zhipu": {
-        "model": "glm-4-plus",
+        "model": "glm-5.2",
         "api_key_env": "ZHIPU_API_KEY",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
-    },
-    "siliconflow": {
-        "model": "deepseek-ai/DeepSeek-V3",
-        "api_key_env": "SILICONFLOW_API_KEY",
-        "base_url": "https://api.siliconflow.cn/v1",
     },
 }
 
@@ -64,7 +59,7 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
     # Kimi's OpenAI-compatible endpoint works best with a plain streaming request.
     model_kwargs = (
         {}
-        if for_tools or provider == "moonshot"
+        if for_tools or provider in {"moonshot", "zhipu"}
         else {"stream_options": {"include_usage": True}}
     )
     if provider == "moonshot":
@@ -92,7 +87,8 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
             timeout=timeout,
             max_retries=0,
         )
-    temperature = None if provider == "moonshot" else 0
+    # Zhipu's OpenAI-compatible endpoint does not support temperature=0.
+    temperature = 0.6 if provider == "zhipu" else (None if provider == "moonshot" else 0)
     openai_kwargs = {}
     if provider == "moonshot" and str(cfg["model"]).startswith("kimi-k3"):
         openai_kwargs["reasoning_effort"] = os.getenv("MOONSHOT_REASONING_EFFORT", "low")

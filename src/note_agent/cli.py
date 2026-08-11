@@ -86,8 +86,7 @@ def select_provider() -> str:
     print("3. Qwen / 通义千问")
     print("4. Moonshot / Kimi")
     print("5. Zhipu / 智谱 GLM")
-    print("6. SiliconFlow")
-    print("7. Anthropic Claude")
+    print("6. Anthropic Claude")
 
     choice = input("> ").strip()
 
@@ -97,8 +96,7 @@ def select_provider() -> str:
         "3": "qwen",
         "4": "moonshot",
         "5": "zhipu",
-        "6": "siliconflow",
-        "7": "anthropic",
+        "6": "anthropic",
     }
 
     return mapping.get(choice, os.getenv("DEFAULT_LLM_PROVIDER", "deepseek"))

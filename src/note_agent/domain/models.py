@@ -19,7 +19,6 @@ LLMProvider = Literal[
     "qwen",
     "moonshot",
     "zhipu",
-    "siliconflow",
 ]
 
 SearchAPI = Literal["duckduckgo", "tavily", "perplexity", "searxng"]
