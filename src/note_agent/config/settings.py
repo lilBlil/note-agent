@@ -23,7 +23,7 @@ MODEL_CONFIGS: dict[str, dict[str, str | None]] = {
         "base_url": None,
     },
     "qwen": {
-        "model": "qwen-max",
+        "model": "qwen3.8-max",
         "api_key_env": "DASHSCOPE_API_KEY",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     },
@@ -88,15 +88,23 @@ def get_model(provider: str = "deepseek", for_tools: bool = False):
             max_retries=0,
         )
     # Zhipu's OpenAI-compatible endpoint does not support temperature=0.
-    temperature = 0.6 if provider == "zhipu" else (None if provider == "moonshot" else 0)
+    if provider == "qwen":
+        temperature = 0.7
+    elif provider == "zhipu":
+        temperature = 0.6
+    else:
+        temperature = None if provider == "moonshot" else 0
     openai_kwargs = {}
     if provider == "moonshot" and str(cfg["model"]).startswith("kimi-k3"):
         openai_kwargs["reasoning_effort"] = os.getenv("MOONSHOT_REASONING_EFFORT", "low")
+    base_url = str(cfg["base_url"] or "")
+    if provider == "qwen":
+        base_url = os.getenv("DASHSCOPE_BASE_URL", base_url).rstrip("/")
 
     return ChatOpenAI(
         model=str(cfg["model"]),
         api_key=api_key,
-        base_url=str(cfg["base_url"] or ""),
+        base_url=base_url,
         temperature=temperature,
         model_kwargs=model_kwargs,
         timeout=timeout,

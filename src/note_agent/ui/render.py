@@ -15,6 +15,7 @@ from note_agent import __version__
 from note_agent.ui import theme
 
 _MERMAID_RE = re.compile(r"```mermaid\s*\n(.*?)```", re.DOTALL)
+_CODE_FENCE_SPLIT_RE = re.compile(r"(```[\s\S]*?```)")
 # Backend appends a "## Sources" section to the note body; we surface sources
 # only in 详细信息, so strip that trailing section from the canvas + download.
 _SOURCES_RE = re.compile(r"\n#{1,6}\s*(sources|参考(资料|文献)?|references)\s*\n.*$",
@@ -24,6 +25,27 @@ _SOURCES_RE = re.compile(r"\n#{1,6}\s*(sources|参考(资料|文献)?|references
 def strip_sources(note: str) -> str:
     """Drop the trailing Sources/参考资料 section from a note body."""
     return _SOURCES_RE.sub("", note or "").rstrip() + "\n" if note else ""
+
+
+def normalize_latex_delimiters(note: str) -> str:
+    """Convert LaTeX delimiters Streamlit handles inconsistently."""
+    if not note:
+        return ""
+
+    def convert_text(part: str) -> str:
+        part = re.sub(
+            r"\\\[\s*\n?(.*?)\n?\\\]",
+            lambda m: f"$$\n{m.group(1).strip()}\n$$",
+            part,
+            flags=re.DOTALL,
+        )
+        return re.sub(r"\\\((.+?)\\\)", lambda m: f"${m.group(1)}$", part)
+
+    parts = _CODE_FENCE_SPLIT_RE.split(note)
+    return "".join(
+        part if part.startswith("```") else convert_text(part)
+        for part in parts
+    )
 
 
 def app_header() -> None:
@@ -51,6 +73,7 @@ def _mermaid(code: str, height: int = 420) -> None:
 
 def _markdown_with_mermaid(note: str) -> None:
     """Render markdown, swapping fenced ```mermaid blocks for live diagrams."""
+    note = normalize_latex_delimiters(note)
     parts = _MERMAID_RE.split(note)
     for idx, part in enumerate(parts):
         if idx % 2 == 0:

@@ -127,6 +127,10 @@ def verify_and_refine_prompt(
 
 def generate_initial_note_prompt(raw_input: str, note_type: str, outline: str) -> str:
     return f"""
+Math formatting requirement: use Markdown LaTeX delimiters only. Use `$...$` for
+inline formulas and `$$...$$` for display formulas. Do not use `\\(...\\)` or
+`\\[...\\]`.
+
 基于用户输入，生成结构化的技术研究笔记初稿。
 
 用户输入：
@@ -152,6 +156,10 @@ def generate_initial_note_prompt(raw_input: str, note_type: str, outline: str) -
 
 def generate_final_note_prompt(raw_input: str, note_type: str, outline: str) -> str:
     return f"""
+Math formatting requirement: use Markdown LaTeX delimiters only. Use `$...$` for
+inline formulas and `$$...$$` for display formulas. Do not use `\\(...\\)` or
+`\\[...\\]`.
+
 基于用户输入，直接生成可发布的最终技术笔记。
 
 用户输入：
