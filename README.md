@@ -1,6 +1,6 @@
 # Note Agent
 
-[![English](https://img.shields.io/badge/README-English-blue)](README.en.md)
+[English](README.en.md)
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
 ![LangGraph](https://img.shields.io/badge/LangGraph-Agent-green)
