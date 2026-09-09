@@ -302,7 +302,7 @@ tests/
 
 ## Tests
 
-The repository does not currently include a GitHub Actions workflow, but it provides local checks suitable for CI integration:
+The repository includes GitHub Actions CI in `.github/workflows/ci.yml`. It runs Ruff and pytest on pushes to `main` and pull requests. Run the following checks locally:
 
 ```powershell
 uv run pytest tests -q
@@ -315,7 +315,7 @@ Current local validation record: `256 passed, 22 skipped`.
 ## Roadmap
 
 - [ ] Add Demo GIFs and Web UI screenshots to improve the GitHub first-screen experience
-- [ ] Add GitHub Actions CI for pytest / compileall / ruff
+- [x] GitHub Actions CI for Ruff and pytest
 - [ ] Expand benchmark sample size and report quality by note type
 - [ ] Add retrieval result reranking / source quality scoring
 - [ ] Add export formats: PDF / HTML / Obsidian vault

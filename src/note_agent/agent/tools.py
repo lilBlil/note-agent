@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Annotated
 
-from langchain_core.tools import tool, InjectedToolArg
+from langchain_core.tools import tool
+from langgraph.prebuilt import InjectedState
 
 from note_agent.agent.common import apply_patches, dedupe_urls, parse_note_structure
 from note_agent.config.llm import ask_llm
@@ -47,8 +48,8 @@ from note_agent.assets.tools import (
 
 @tool
 def infer_note_structure(
-    raw_input: str,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek"
+    raw_input: Annotated[str, InjectedState("raw_input")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
 ) -> dict:
     """
     推断笔记类型并生成大纲结构。
@@ -73,11 +74,11 @@ def infer_note_structure(
 
 @tool
 def generate_note_draft(
-    raw_input: str,
-    note_type: str,
-    note_outline: list,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek",
-    run_id: Annotated[str, InjectedToolArg] = ""
+    raw_input: Annotated[str, InjectedState("raw_input")],
+    note_type: Annotated[str, InjectedState("note_type")],
+    note_outline: Annotated[list, InjectedState("note_outline")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
+    run_id: Annotated[str, InjectedState("run_id")],
 ) -> dict:
     """
     生成笔记初稿。
@@ -111,10 +112,10 @@ def generate_note_draft(
 
 @tool
 def search_references(
-    current_note: str,
-    used_queries: list,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek",
-    search_api: Annotated[str, InjectedToolArg] = "duckduckgo"
+    current_note: Annotated[str, InjectedState("current_note")],
+    used_queries: Annotated[list, InjectedState("used_reference_queries")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
+    search_api: Annotated[str, InjectedState("search_api")],
 ) -> dict:
     """
     分析笔记信息缺口，生成检索查询并执行搜索。
@@ -297,12 +298,12 @@ def search_references(
 
 @tool
 def refine_note_with_references(
-    raw_input: str,
-    current_note: str,
-    reference_results: list,
-    iteration: int,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek",
-    run_id: Annotated[str, InjectedToolArg] = ""
+    raw_input: Annotated[str, InjectedState("raw_input")],
+    current_note: Annotated[str, InjectedState("current_note")],
+    reference_results: Annotated[list, InjectedState("reference_results")],
+    iteration: Annotated[int, InjectedState("iteration_count")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
+    run_id: Annotated[str, InjectedState("run_id")],
 ) -> dict:
     """
     使用检索到的参考信息验证和修正笔记。
@@ -316,7 +317,8 @@ def refine_note_with_references(
     Returns:
         包含 refined_note 和 intermediate_path 的字典
     """
-    emit_event("info", text=f"🔍 正在验证和修正笔记（第 {iteration} 轮）")
+    next_iteration = iteration + 1
+    emit_event("info", text=f"🔍 正在验证和修正笔记（第 {next_iteration} 轮）")
 
     # Convert dict results back to ReferenceItem objects
     from note_agent.domain.models import ReferenceItem
@@ -343,21 +345,21 @@ def refine_note_with_references(
 
     intermediate_path = save_intermediate_note(
         run_id,
-        f"refined_iter_{iteration}",
+        f"refined_iter_{next_iteration}",
         new_note,
     )
 
-    emit_event("info", text=f"✅ 第 {iteration} 轮修正完成：{intermediate_path}")
+    emit_event("info", text=f"✅ 第 {next_iteration} 轮修正完成：{intermediate_path}")
 
     return {"refined_note": new_note, "intermediate_path": intermediate_path}
 
 
 @tool
 def finalize_note_content(
-    current_note: str,
-    sources: list,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek",
-    run_id: Annotated[str, InjectedToolArg] = ""
+    current_note: Annotated[str, InjectedState("current_note")],
+    sources: Annotated[list, InjectedState("sources")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
+    run_id: Annotated[str, InjectedState("run_id")],
 ) -> dict:
     """
     生成最终版本的笔记（纯文本）。
@@ -388,9 +390,9 @@ def finalize_note_content(
 
 @tool
 def plan_note_assets(
-    final_note: str,
-    note_type: str,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek"
+    final_note: Annotated[str, InjectedState("final_note")],
+    note_type: Annotated[str, InjectedState("note_type")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
 ) -> dict:
     """
     规划笔记需要的多模态资产（公式、代码、图表、流程图）。
@@ -425,10 +427,10 @@ def plan_note_assets(
 
 @tool
 def generate_note_assets(
-    final_note: str,
-    asset_plan: list,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek",
-    run_id: Annotated[str, InjectedToolArg] = ""
+    final_note: Annotated[str, InjectedState("final_note")],
+    asset_plan: Annotated[list, InjectedState("asset_plan")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
+    run_id: Annotated[str, InjectedState("run_id")],
 ) -> dict:
     """
     根据规划生成实际的资产文件。
@@ -473,10 +475,10 @@ def generate_note_assets(
 
 @tool
 def assemble_final_note(
-    final_note: str,
-    generated_assets: dict,
-    asset_paths: list,
-    run_id: Annotated[str, InjectedToolArg] = ""
+    final_note: Annotated[str, InjectedState("final_note")],
+    generated_assets: Annotated[dict, InjectedState("generated_assets")],
+    asset_paths: Annotated[list, InjectedState("asset_paths")],
+    run_id: Annotated[str, InjectedState("run_id")],
 ) -> dict:
     """
     将资产注入到笔记中，生成多模态 Markdown。
@@ -503,11 +505,11 @@ def assemble_final_note(
 
 @tool
 def save_final_note(
-    final_note: str,
-    asset_paths: list,
-    sources: list,
-    llm_provider: Annotated[str, InjectedToolArg] = "deepseek",
-    run_id: Annotated[str, InjectedToolArg] = ""
+    final_note: Annotated[str, InjectedState("final_note")],
+    asset_paths: Annotated[list, InjectedState("asset_paths")],
+    sources: Annotated[list, InjectedState("sources")],
+    llm_provider: Annotated[str, InjectedState("llm_provider")],
+    run_id: Annotated[str, InjectedState("run_id")],
 ) -> dict:
     """
     生成标题并保存最终笔记到磁盘。
@@ -543,9 +545,9 @@ def save_final_note(
 
 @tool
 def publish_note_to_notion(
-    final_note: str,
-    note_title: str,
-    run_id: Annotated[str, InjectedToolArg] = ""
+    final_note: Annotated[str, InjectedState("final_note")],
+    note_title: Annotated[str, InjectedState("note_title")],
+    run_id: Annotated[str, InjectedState("run_id")],
 ) -> dict:
     """
     发布笔记到 Notion。

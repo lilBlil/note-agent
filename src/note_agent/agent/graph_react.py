@@ -1,5 +1,6 @@
 """ReAct-based graph for note agent."""
 
+import json
 from functools import lru_cache
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -8,12 +9,14 @@ from langgraph.prebuilt import ToolNode
 
 from note_agent.agent.prompts import react_system_prompt
 from note_agent.agent.tools import ALL_TOOLS
+from note_agent.agent.tool_runtime import resolve_tool_args
 from note_agent.domain.models import NoteResearchState
 from note_agent.io.events import emit_event, emit_node_start
 
 
-_TOOL_NODE = ToolNode(ALL_TOOLS)
+_TOOL_NODE = ToolNode(ALL_TOOLS, handle_tool_errors=False)
 _RESEARCH_LOOP_TOOLS = {"search_references", "refine_note_with_references"}
+_ASSET_TOOLS = {"plan_note_assets", "generate_note_assets", "assemble_final_note"}
 
 
 @lru_cache(maxsize=8)
@@ -42,6 +45,21 @@ def _dedupe_sources(items: list) -> list:
     return out
 
 
+def _dedupe_items(items: list) -> list:
+    """Dedupe strings and JSON-like values while preserving order."""
+    seen: set[str] = set()
+    result = []
+    for item in items:
+        if isinstance(item, dict):
+            key = json.dumps(item, ensure_ascii=False, sort_keys=True, default=str)
+        else:
+            key = str(item)
+        if key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
+
 def _research_budget_exhausted(state: NoteResearchState) -> bool:
     return (
         bool(state.get("current_note"))
@@ -55,13 +73,42 @@ def _finalize_tool_call(state: NoteResearchState, call_id: str) -> AIMessage:
         content="Research iteration budget reached; finalize the current note.",
         tool_calls=[{
             "name": "finalize_note_content",
-            "args": {
-                "current_note": state["current_note"],
-                "sources": state.get("sources", []),
-            },
+            "args": {},
             "id": call_id,
         }],
     )
+
+
+def _replace_disabled_optional_calls(
+    response: AIMessage,
+    state: NoteResearchState,
+) -> AIMessage:
+    """Prevent the model from entering disabled optional branches."""
+    if not response.tool_calls:
+        return response
+
+    calls = list(response.tool_calls)
+    if not state.get("enable_assets"):
+        disabled = [call for call in calls if call.get("name") in _ASSET_TOOLS]
+        calls = [call for call in calls if call.get("name") not in _ASSET_TOOLS]
+        if disabled:
+            emit_event("warning", text="Assets are disabled; skipping asset tool calls.")
+            if not calls and state.get("final_note"):
+                calls = [{
+                    "name": "save_final_note",
+                    "args": {},
+                    "id": "auto_save_without_assets",
+                }]
+
+    if not state.get("enable_notion"):
+        disabled = [call for call in calls if call.get("name") == "publish_note_to_notion"]
+        calls = [call for call in calls if call.get("name") != "publish_note_to_notion"]
+        if disabled:
+            emit_event("warning", text="Notion is disabled; skipping publish tool call.")
+
+    if calls == response.tool_calls:
+        return response
+    return AIMessage(content=response.content, tool_calls=calls)
 
 
 def _agent_phase_label(state: NoteResearchState) -> str:
@@ -130,6 +177,7 @@ def create_agent_node(state: NoteResearchState):
 
     # Call LLM
     response = _bound_tool_model(state["llm_provider"]).invoke(messages)
+    response = _replace_disabled_optional_calls(response, state)
 
     if response.tool_calls and _research_budget_exhausted(state):
         requested = {call.get("name", "") for call in response.tool_calls}
@@ -144,6 +192,7 @@ def create_agent_node(state: NoteResearchState):
             response = _finalize_tool_call(state, "auto_finalize_budget")
 
     # Check if task is complete
+    state_updates = {}
     if not response.tool_calls:
         # Agent decided not to call any tool - check if we're done
         if _research_budget_exhausted(state):
@@ -175,8 +224,12 @@ def create_agent_node(state: NoteResearchState):
                 )
             else:
                 emit_event("info", text="✅ Agent 判断任务已完成")
+                state_updates["completion_reason"] = "completed"
+        else:
+            emit_event("warning", text="⚠️ Agent 在保存前停止，任务未完成")
+            state_updates["completion_reason"] = "agent_stopped_before_save"
 
-    return {"messages": [response]}
+    return {"messages": [response], **state_updates}
 
 
 def create_tool_node(state: NoteResearchState):
@@ -206,28 +259,36 @@ def create_tool_node(state: NoteResearchState):
     _label = " · ".join(_TOOL_LABELS.get(n, n) for n in _names) or "执行工具"
     emit_node_start("tools", _label)
 
-    # Inject system parameters into tool calls
-    injected_message = AIMessage(
-        content=last_message.content,
-        tool_calls=[
-            {
-                **call,
-                "args": {
-                    **call.get("args", {}),
-                    "llm_provider": state.get("llm_provider", "deepseek"),
-                    "run_id": state.get("run_id", ""),
-                    "search_api": state.get("search_api", "duckduckgo"),
+    # Resolve authoritative state at execution time; model-provided values are
+    # retained only for decision parameters.
+    try:
+        injected_message = AIMessage(
+            content=last_message.content,
+            tool_calls=[
+                {
+                    **call,
+                    "args": resolve_tool_args(
+                        call["name"],
+                        call.get("args", {}),
+                        state,
+                    ),
                 }
-            }
-            for call in last_message.tool_calls
-        ]
-    )
+                for call in last_message.tool_calls
+            ],
+        )
+    except Exception as exc:
+        emit_event("error", message=f"ReAct tool argument injection failed: {exc}", fatal=True)
+        raise
 
     # Replace last message with injected version
     injected_state = {**state, "messages": messages[:-1] + [injected_message]}
 
     # Execute tools using the shared ToolNode.
-    result = _TOOL_NODE.invoke(injected_state)
+    try:
+        result = _TOOL_NODE.invoke(injected_state)
+    except Exception as exc:
+        emit_event("error", message=f"ReAct tool execution failed: {exc}", fatal=True)
+        raise
 
     # Extract tool results and update state
     tool_messages = result.get("messages", [])
@@ -237,7 +298,6 @@ def create_tool_node(state: NoteResearchState):
     for msg in tool_messages:
         if isinstance(msg, ToolMessage):
             try:
-                import json
                 tool_result = (
                     json.loads(msg.content)
                     if isinstance(msg.content, str)
@@ -257,14 +317,16 @@ def create_tool_node(state: NoteResearchState):
                         state_updates["current_note"] = tool_result["refined_note"]
                         state_updates["iteration_count"] = state.get("iteration_count", 0) + 1
                     if "reference_results" in tool_result:
-                        current_results = state.get("evidence_items", [])
-                        current_results.extend(tool_result["reference_results"])
-                        state_updates["evidence_items"] = current_results
-                        state_updates["reference_results"] = tool_result["reference_results"]
+                        current_results = list(state.get("evidence_items", []))
+                        current_results.extend(tool_result["reference_results"] or [])
+                        state_updates["evidence_items"] = _dedupe_items(current_results)
+                        reference_results = list(state.get("reference_results", []))
+                        reference_results.extend(tool_result["reference_results"] or [])
+                        state_updates["reference_results"] = _dedupe_items(reference_results)
                     if "new_queries" in tool_result:
                         current_queries = state.get("used_reference_queries", [])
-                        current_queries.extend(tool_result["new_queries"])
-                        state_updates["used_reference_queries"] = current_queries
+                        current_queries.extend(tool_result["new_queries"] or [])
+                        state_updates["used_reference_queries"] = _dedupe_items(current_queries)
                     if "sources" in tool_result:
                         current_sources = list(state.get("sources", []))
                         current_sources.extend(tool_result["sources"] or [])
@@ -272,7 +334,7 @@ def create_tool_node(state: NoteResearchState):
                     if "failed_sources" in tool_result:
                         current_failures = list(state.get("failed_sources", []))
                         current_failures.extend(tool_result["failed_sources"] or [])
-                        state_updates["failed_sources"] = current_failures
+                        state_updates["failed_sources"] = _dedupe_items(current_failures)
                     if "final_note" in tool_result:
                         state_updates["final_note"] = tool_result["final_note"]
                     if "final_note_with_assets" in tool_result:
@@ -294,12 +356,13 @@ def create_tool_node(state: NoteResearchState):
                     if "notion_url" in tool_result:
                         state_updates["notion_url"] = tool_result["notion_url"]
                     if "intermediate_path" in tool_result:
-                        paths = state.get("intermediate_paths", [])
+                        paths = list(state.get("intermediate_paths", []))
                         paths.append(tool_result["intermediate_path"])
-                        state_updates["intermediate_paths"] = paths
+                        state_updates["intermediate_paths"] = _dedupe_items(paths)
 
             except Exception as e:
-                emit_event("warning", text=f"解析工具结果失败：{e}")
+                emit_event("error", message=f"解析工具结果失败：{e}", fatal=True)
+                raise RuntimeError(f"Failed to parse ReAct tool result: {e}") from e
 
     state_updates["messages"] = tool_messages
     return state_updates

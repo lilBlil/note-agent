@@ -302,7 +302,7 @@ tests/
 
 ## 测试
 
-当前仓库未配置 GitHub Actions workflow，但已提供适合 CI 接入的本地检查命令：
+仓库已配置 GitHub Actions CI（`.github/workflows/ci.yml`），会在推送到 `main` 和 Pull Request 时运行 Ruff 与 pytest。本地可运行：
 
 ```powershell
 uv run pytest tests -q
@@ -315,7 +315,7 @@ uv run ruff check src tests
 ## Roadmap
 
 - [ ] 补充 Demo GIF 和 Web UI 截图，提高 GitHub 首屏可信度
-- [ ] 添加 GitHub Actions CI，自动运行 pytest / compileall / ruff
+- [x] GitHub Actions CI，自动运行 Ruff 与 pytest
 - [ ] 扩大 benchmark 样本量，按 note type 输出更可信的质量对比
 - [ ] 增加检索结果 rerank / source quality scoring
 - [ ] 增加导出格式：PDF / HTML / Obsidian vault

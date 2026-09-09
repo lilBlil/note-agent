@@ -78,6 +78,10 @@ def run_agent(
         result = graph_factory().invoke(initial_state)
         result["usage"] = summarize_usage()
         save_state_snapshot(run_id, result)
+        if mode == "react" and not result.get("saved_path"):
+            error = result.get("completion_reason") or "Agent stopped before saving the note"
+            finish_run(run_id=run_id, status="error", error=error)
+            raise RuntimeError(error)
         finish_run(
             run_id=run_id,
             status="success",
@@ -144,6 +148,20 @@ def stream_agent_events(
             current_state["usage"] = usage
             save_state_snapshot(run_id, current_state)
             heartbeat_run(run_id)
+            if mode == "react" and not current_state.get("saved_path"):
+                error = (
+                    current_state.get("completion_reason")
+                    or "Agent stopped before saving the note"
+                )
+                finish_run(run_id=run_id, status="error", error=error)
+                q.put({
+                    "type": "error",
+                    "message": error,
+                    "fatal": True,
+                    "run_id": run_id,
+                    "run_log_dir": str(get_run_dir(run_id).resolve()),
+                })
+                return
             finish_run(
                 run_id=run_id,
                 status="success",

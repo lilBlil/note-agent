@@ -125,7 +125,7 @@ class TestReactBudgetGuards:
 
         tool_call = result["messages"][0].tool_calls[0]
         assert tool_call["name"] == "finalize_note_content"
-        assert tool_call["args"]["current_note"] == "# Draft"
+        assert tool_call["args"] == {}
         assert any(event_type == "warning" for event_type, _ in events)
 
     def test_budget_exhausted_without_tool_call_forces_finalize(self, base_state, monkeypatch):

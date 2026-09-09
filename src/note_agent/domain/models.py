@@ -68,6 +68,7 @@ def build_base_state(
         "note_title": "",
         "saved_path": "",
         "notion_url": "",
+        "completion_reason": "",
         "intermediate_paths": [],
         "asset_plan": [],
         "generated_assets": {},
@@ -163,6 +164,7 @@ class NoteResearchState(TypedDict):
     note_title: str
     notion_url: str
     saved_path: str
+    completion_reason: str
     intermediate_paths: list[str]
 
     # Assets
