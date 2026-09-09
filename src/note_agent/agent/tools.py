@@ -1,9 +1,6 @@
 """ReAct tools for note agent."""
 
 import json
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
 from typing import Annotated
 
 from langchain_core.tools import tool
@@ -13,28 +10,20 @@ from note_agent.agent.common import apply_patches, dedupe_urls, parse_note_struc
 from note_agent.config.llm import ask_llm
 from note_agent.config.runtime import (
     max_reference_queries,
-    max_results_per_source,
-    max_retrieval_workers,
 )
 from note_agent.io.events import emit_event
 from note_agent.io.text import derive_title, normalize_query, save_markdown
 from note_agent.agent.prompts import (
-    finalize_note_prompt,
     generate_assets_prompt,
     generate_initial_note_prompt,
     generate_reference_queries_prompt,
     infer_type_and_outline_prompt,
     plan_assets_prompt,
-    verify_and_refine_prompt,
-)
-from note_agent.retrieval.retriever import (
-    collect_reference_urls,
-    format_references_for_prompt,
-    retrieve_references,
 )
 from note_agent.domain.models import ReferenceQuery
 from note_agent.io.storage import append_event, save_intermediate_note
 from note_agent.notion import publish_note
+from note_agent.services import research as research_service
 from note_agent.utils import extract_json_object, to_plain_data
 from note_agent.assets.tools import (
     build_asset_markdown_items,
@@ -204,89 +193,11 @@ def search_references(
         emit_event("info", text="✅ 未发现新的信息缺口")
         return {"reference_results": [], "new_queries": [], "sources": [], "failed_sources": []}
 
-    # 执行检索
-    emit_event("info", text=f"🌐 开始检索 {len(reference_queries)} 个查询")
-
-    lock = Lock()
-    all_results = []
-    all_sources = []
-    failed_sources = []
-
-    def fetch(rq: ReferenceQuery):
-        failures = []
-        emit_event("info", text=f"  📡 检索：{rq.query} ({', '.join(rq.source_types)})")
-        try:
-            results = retrieve_references(
-                rq,
-                web_backend=search_api,
-                max_results_per_type=max_results_per_source(),
-                on_failure=failures.append,
-            )
-            return results, failures
-        except Exception as e:
-            failure = {
-                "query": rq.query,
-                "source_type": ",".join(rq.source_types),
-                "source_name": search_api,
-                "error_type": type(e).__name__,
-                "error": str(e),
-            }
-            emit_event("warning", text=f"Reference retrieval failed: {rq.query}: {e}", failed_source=failure)
-            emit_event("info", text=f"  ⚠️ 检索失败：{rq.query} - {e}")
-            return [], [failure]
-
-    with ThreadPoolExecutor(
-        max_workers=min(len(reference_queries), max_retrieval_workers())
-    ) as pool:
-        futures = {pool.submit(fetch, rq): rq for rq in reference_queries}
-        for fut in as_completed(futures):
-            results, failures = fut.result()
-            with lock:
-                all_results.extend(results)
-                all_sources.extend(collect_reference_urls(results))
-                failed_sources.extend(failures)
-
-    emit_event("info", text=f"✅ 检索完成，共获取 {len(all_results)} 条参考信息")
-
-    source_counts = Counter(
-        item.source_name or item.source_type or "unknown"
-        for item in all_results
+    all_results, all_sources, failed_sources = research_service.retrieve_reference_materials(
+        reference_queries,
+        search_api=search_api,
+        emit=emit_event,
     )
-    source_summary = ", ".join(
-        f"{name}:{count}" for name, count in sorted(source_counts.items())
-    ) or "none"
-    emit_event(
-        "info",
-        text=(
-            f"Retrieval summary: total={len(all_results)}; "
-            f"sources={source_summary}"
-        ),
-    )
-    if failed_sources:
-        emit_event(
-            "warning",
-            text=f"Retrieval failures recorded: {len(failed_sources)}",
-            failed_sources=failed_sources,
-        )
-
-    web_requested = any("web" in rq.source_types for rq in reference_queries)
-    web_result_count = source_counts.get(search_api, 0)
-    if not web_requested:
-        emit_event(
-            "info",
-            text=(
-                f"Web backend '{search_api}' was not called because "
-                "no generated query requested source_type='web'."
-            ),
-        )
-    elif web_result_count == 0:
-        emit_event(
-            "warning",
-            text=(
-                f"Web backend '{search_api}' was requested but returned "
-                "no recorded results; check failed_sources."
-            ),
-        )
 
     return {
         "reference_results": [to_plain_data(r) for r in all_results],
@@ -318,38 +229,19 @@ def refine_note_with_references(
         包含 refined_note 和 intermediate_path 的字典
     """
     next_iteration = iteration + 1
-    emit_event("info", text=f"🔍 正在验证和修正笔记（第 {next_iteration} 轮）")
-
-    # Convert dict results back to ReferenceItem objects
-    from note_agent.domain.models import ReferenceItem
-    reference_items = []
-    for item in reference_results:
-        if isinstance(item, dict):
-            reference_items.append(ReferenceItem(**item))
-        else:
-            reference_items.append(item)
-
-    references_text = format_references_for_prompt(reference_items)
-
-    patch_text = ask_llm(
-        verify_and_refine_prompt(
-            raw_input=raw_input,
-            current_note=current_note,
-            references=references_text,
-        ),
-        provider=llm_provider,
-        stream=True,
+    new_note, intermediate_path = research_service.refine_note_content(
+        raw_input=raw_input,
+        current_note=current_note,
+        reference_results=reference_results,
+        llm_provider=llm_provider,
+        run_id=run_id,
+        next_iteration=next_iteration,
+        intermediate_label=f"refined_iter_{next_iteration}",
+        ask=ask_llm,
+        apply=apply_patches,
+        save=save_intermediate_note,
+        emit=emit_event,
     )
-
-    new_note = apply_patches(current_note, patch_text)
-
-    intermediate_path = save_intermediate_note(
-        run_id,
-        f"refined_iter_{next_iteration}",
-        new_note,
-    )
-
-    emit_event("info", text=f"✅ 第 {next_iteration} 轮修正完成：{intermediate_path}")
 
     return {"refined_note": new_note, "intermediate_path": intermediate_path}
 
@@ -371,19 +263,15 @@ def finalize_note_content(
     Returns:
         包含 final_note 和 intermediate_path 的字典
     """
-    emit_event("info", text="📝 正在生成最终版本笔记")
-
-    final_note = ask_llm(
-        finalize_note_prompt(
-            current_note=current_note,
-            sources=sources,
-        ),
-        provider=llm_provider,
-        stream=True,
+    final_note, intermediate_path = research_service.finalize_note_text(
+        current_note=current_note,
+        sources=sources,
+        llm_provider=llm_provider,
+        run_id=run_id,
+        ask=ask_llm,
+        save=save_intermediate_note,
+        emit=emit_event,
     )
-
-    intermediate_path = save_intermediate_note(run_id, "final_text_only", final_note)
-    emit_event("info", text=f"✅ 最终版本已保存：{intermediate_path}")
 
     return {"final_note": final_note, "intermediate_path": intermediate_path}
 

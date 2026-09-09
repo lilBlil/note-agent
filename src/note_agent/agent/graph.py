@@ -1,7 +1,4 @@
 import json
-from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
 
 from langgraph.graph import END, START, StateGraph
 
@@ -18,20 +15,16 @@ from note_agent.assets.tools import (
 from note_agent.config.llm import ask_llm
 from note_agent.config.runtime import (
     max_reference_queries,
-    max_results_per_source,
-    max_retrieval_workers,
 )
 from note_agent.io.events import emit_event, emit_node_start
 from note_agent.io.text import derive_title, normalize_query, save_markdown
 from note_agent.agent.prompts import (
-    finalize_note_prompt,
     generate_final_note_prompt,
     generate_assets_prompt,
     generate_initial_note_prompt,
     generate_reference_queries_prompt,
     infer_type_and_outline_prompt,
     plan_assets_prompt,
-    verify_and_refine_prompt,
 )
 from note_agent.retrieval.retriever import (
     collect_reference_urls,
@@ -41,6 +34,7 @@ from note_agent.retrieval.retriever import (
 from note_agent.domain.models import NoteResearchState, ReferenceQuery
 from note_agent.io.storage import append_event, save_intermediate_note
 from note_agent.notion import publish_note
+from note_agent.services import research as research_service
 
 from note_agent.utils import extract_json_object, to_plain_data
 
@@ -240,88 +234,25 @@ def retrieve_references_node(state: NoteResearchState):
             "failed_sources": failed_sources,
         }
 
-    queries = []
+    queries: list[ReferenceQuery] = []
     for item in state["reference_queries"]:
         try:
             queries.append(ReferenceQuery(**item))
         except Exception:
             continue
 
-    lock = Lock()
-    current_round_results = []
-
-    def fetch(rq: ReferenceQuery):
-        failures = []
-        emit_event("info", text=f"正在检索：{rq.query}；来源类型：{', '.join(rq.source_types)}")
-        try:
-            results = retrieve_references(
-                rq,
-                web_backend=state["search_api"],
-                max_results_per_type=max_results_per_source(),
-                on_failure=failures.append,
-            )
-            return results, failures
-        except Exception as e:
-            failure = {
-                "query": rq.query,
-                "source_type": ",".join(rq.source_types),
-                "source_name": state["search_api"],
-                "error_type": type(e).__name__,
-                "error": str(e),
-            }
-            emit_event("warning", text=f"Reference retrieval failed: {rq.query}: {e}", failed_source=failure)
-            emit_event("info", text=f"检索失败：{rq.query}；原因：{e}")
-            return [], [failure]
-
-    with ThreadPoolExecutor(max_workers=min(len(queries), max_retrieval_workers())) as pool:
-        futures = {pool.submit(fetch, rq): rq for rq in queries}
-        for fut in as_completed(futures):
-            results, failures = fut.result()
-            with lock:
-                current_round_results.extend(results)
-                evidence_items.extend(results)
-                sources.extend(collect_reference_urls(results))
-                failed_sources.extend(failures)
-
-    source_counts = Counter(
-        item.source_name or item.source_type or "unknown"
-        for item in current_round_results
+    current_round_results, current_sources, current_failures = (
+        research_service.retrieve_reference_materials(
+            queries,
+            search_api=state["search_api"],
+            retrieve=retrieve_references,
+            collect_urls=collect_reference_urls,
+            emit=emit_event,
+        )
     )
-    source_summary = ", ".join(
-        f"{name}:{count}" for name, count in sorted(source_counts.items())
-    ) or "none"
-    emit_event(
-        "info",
-        text=(
-            f"Retrieval summary: total={len(current_round_results)}; "
-            f"sources={source_summary}"
-        ),
-    )
-    if failed_sources:
-        emit_event(
-            "warning",
-            text=f"Retrieval failures recorded: {len(failed_sources)}",
-            failed_sources=failed_sources,
-        )
-
-    web_requested = any("web" in rq.source_types for rq in queries)
-    web_result_count = source_counts.get(state["search_api"], 0)
-    if not web_requested:
-        emit_event(
-            "info",
-            text=(
-                f"Web backend '{state['search_api']}' was not called because "
-                "no generated query requested source_type='web'."
-            ),
-        )
-    elif web_result_count == 0:
-        emit_event(
-            "warning",
-            text=(
-                f"Web backend '{state['search_api']}' was requested but returned "
-                "no recorded results; check failed_sources."
-            ),
-        )
+    evidence_items.extend(current_round_results)
+    sources.extend(current_sources)
+    failed_sources.extend(current_failures)
 
     return {
         "reference_results": current_round_results,
@@ -334,28 +265,21 @@ def retrieve_references_node(state: NoteResearchState):
 def verify_and_refine(state: NoteResearchState):
     emit_node_start("verify_and_refine", "正在核验并修正笔记")
 
-    references_text = format_references_for_prompt(state["reference_results"])
     next_iteration = state["iteration_count"] + 1
-
-    patch_text = ask_llm(
-        verify_and_refine_prompt(
-            raw_input=state["raw_input"],
-            current_note=state["current_note"],
-            references=references_text,
-        ),
-        provider=state["llm_provider"],
-        stream=True,
+    new_note, intermediate_path = research_service.refine_note_content(
+        raw_input=state["raw_input"],
+        current_note=state["current_note"],
+        reference_results=state["reference_results"],
+        llm_provider=state["llm_provider"],
+        run_id=state["run_id"],
+        next_iteration=next_iteration,
+        intermediate_label=f"iteration_{next_iteration}_refined",
+        ask=ask_llm,
+        format_references=format_references_for_prompt,
+        apply=apply_patches,
+        save=save_intermediate_note,
+        emit=emit_event,
     )
-
-    new_note = apply_patches(state["current_note"], patch_text)
-
-    intermediate_path = save_intermediate_note(
-        state["run_id"],
-        f"iteration_{next_iteration}_refined",
-        new_note,
-    )
-
-    emit_event("info", text=f"已保存第 {next_iteration} 轮中间笔记：{intermediate_path}")
 
     return {
         "current_note": new_note,
@@ -373,22 +297,15 @@ def route_iteration(state: NoteResearchState) -> str:
 def finalize_note(state: NoteResearchState):
     emit_node_start("finalize_note", "正在生成最终文本笔记")
 
-    final_note = ask_llm(
-        finalize_note_prompt(
-            current_note=state["current_note"],
-            sources=state["sources"],
-        ),
-        provider=state["llm_provider"],
-        stream=True,
+    final_note, intermediate_path = research_service.finalize_note_text(
+        current_note=state["current_note"],
+        sources=state["sources"],
+        llm_provider=state["llm_provider"],
+        run_id=state["run_id"],
+        ask=ask_llm,
+        save=save_intermediate_note,
+        emit=emit_event,
     )
-
-    intermediate_path = save_intermediate_note(
-        state["run_id"],
-        "final_text_only",
-        final_note,
-    )
-
-    emit_event("info", text=f"已保存文本版最终笔记：{intermediate_path}")
 
     return {
         "final_note": final_note,
