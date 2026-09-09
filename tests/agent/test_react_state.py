@@ -23,6 +23,23 @@ class _ResultToolNode:
         }
 
 
+class _MultipleResultToolNode:
+    def __init__(self, results: list[dict]) -> None:
+        self.results = results
+
+    def invoke(self, state):
+        calls = state["messages"][-1].tool_calls
+        return {
+            "messages": [
+                ToolMessage(
+                    content=json.dumps(result, ensure_ascii=False),
+                    tool_call_id=calls[index]["id"],
+                )
+                for index, result in enumerate(self.results)
+            ]
+        }
+
+
 def _call_state(base_state, name: str, call_id: str) -> dict:
     state = dict(base_state)
     state["messages"] = [
@@ -56,6 +73,61 @@ def test_state_merge_deduplicates_research_metadata(base_state, monkeypatch) -> 
     assert len(second["failed_sources"]) == 1
     assert second["intermediate_paths"] == ["/tmp/iteration.md"]
     assert len(second["evidence_items"]) == 1
+
+
+def test_multiple_tool_messages_merge_without_data_loss(base_state, monkeypatch) -> None:
+    first_result = {
+        "reference_results": [{"query": "q1", "url": "https://one.example"}],
+        "new_queries": ["q1"],
+        "sources": ["https://one.example"],
+        "failed_sources": [{"query": "q1", "error": "timeout"}],
+        "intermediate_path": "/tmp/first.md",
+    }
+    second_result = {
+        "reference_results": [
+            {"query": "q1", "url": "https://one.example"},
+            {"query": "q2", "url": "https://two.example"},
+        ],
+        "new_queries": ["q1", "q2"],
+        "sources": ["https://one.example", "https://two.example"],
+        "failed_sources": [
+            {"query": "q1", "error": "timeout"},
+            {"query": "q2", "error": "unavailable"},
+        ],
+        "intermediate_path": "/tmp/second.md",
+    }
+    monkeypatch.setattr(
+        graph_react,
+        "_TOOL_NODE",
+        _MultipleResultToolNode([first_result, second_result]),
+    )
+    monkeypatch.setattr(graph_react, "emit_node_start", lambda *a, **k: None)
+
+    state = dict(base_state)
+    state["messages"] = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {"name": "search_references", "args": {}, "id": "call_1"},
+                {"name": "search_references", "args": {}, "id": "call_2"},
+            ],
+        )
+    ]
+
+    result = graph_react.create_tool_node(state)
+
+    assert result["reference_results"] == [
+        {"query": "q1", "url": "https://one.example"},
+        {"query": "q2", "url": "https://two.example"},
+    ]
+    assert result["evidence_items"] == result["reference_results"]
+    assert result["used_reference_queries"] == ["q1", "q2"]
+    assert result["sources"] == ["https://one.example", "https://two.example"]
+    assert result["failed_sources"] == [
+        {"query": "q1", "error": "timeout"},
+        {"query": "q2", "error": "unavailable"},
+    ]
+    assert result["intermediate_paths"] == ["/tmp/first.md", "/tmp/second.md"]
 
 
 def test_normal_tool_results_update_required_state_fields(base_state, monkeypatch) -> None:

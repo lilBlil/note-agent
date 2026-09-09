@@ -92,6 +92,7 @@ def test_notion_fallback_is_routed_when_enabled(base_state, monkeypatch) -> None
     result = create_agent_node(base_state)
 
     assert result["messages"][0].tool_calls[0]["name"] == "publish_note_to_notion"
+    assert result["messages"][0].tool_calls[0]["args"] == {}
 
 
 def test_no_tool_call_before_save_is_diagnostic(base_state, monkeypatch) -> None:

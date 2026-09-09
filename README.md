@@ -310,7 +310,7 @@ uv run python -m compileall -q src
 uv run ruff check src tests
 ```
 
-当前本地验证记录：`256 passed, 22 skipped`。
+最新测试状态以 GitHub Actions CI 为准。
 
 ## Roadmap
 

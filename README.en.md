@@ -310,7 +310,7 @@ uv run python -m compileall -q src
 uv run ruff check src tests
 ```
 
-Current local validation record: `256 passed, 22 skipped`.
+The latest test status is reported by GitHub Actions CI.
 
 ## Roadmap
 

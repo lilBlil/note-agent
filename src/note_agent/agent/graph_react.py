@@ -214,11 +214,7 @@ def create_agent_node(state: NoteResearchState):
                     content="需要发布到 Notion",
                     tool_calls=[{
                         "name": "publish_note_to_notion",
-                        "args": {
-                            "final_note": state["final_note"],
-                            "note_title": state.get("note_title", ""),
-                            "run_id": state["run_id"],
-                        },
+                        "args": {},
                         "id": "auto_publish_call",
                     }]
                 )
@@ -317,22 +313,47 @@ def create_tool_node(state: NoteResearchState):
                         state_updates["current_note"] = tool_result["refined_note"]
                         state_updates["iteration_count"] = state.get("iteration_count", 0) + 1
                     if "reference_results" in tool_result:
-                        current_results = list(state.get("evidence_items", []))
+                        current_results = list(
+                            state_updates.get(
+                                "evidence_items",
+                                state.get("evidence_items", []),
+                            )
+                        )
                         current_results.extend(tool_result["reference_results"] or [])
                         state_updates["evidence_items"] = _dedupe_items(current_results)
-                        reference_results = list(state.get("reference_results", []))
+                        reference_results = list(
+                            state_updates.get(
+                                "reference_results",
+                                state.get("reference_results", []),
+                            )
+                        )
                         reference_results.extend(tool_result["reference_results"] or [])
                         state_updates["reference_results"] = _dedupe_items(reference_results)
                     if "new_queries" in tool_result:
-                        current_queries = state.get("used_reference_queries", [])
+                        current_queries = list(
+                            state_updates.get(
+                                "used_reference_queries",
+                                state.get("used_reference_queries", []),
+                            )
+                        )
                         current_queries.extend(tool_result["new_queries"] or [])
                         state_updates["used_reference_queries"] = _dedupe_items(current_queries)
                     if "sources" in tool_result:
-                        current_sources = list(state.get("sources", []))
+                        current_sources = list(
+                            state_updates.get(
+                                "sources",
+                                state.get("sources", []),
+                            )
+                        )
                         current_sources.extend(tool_result["sources"] or [])
                         state_updates["sources"] = _dedupe_sources(current_sources)
                     if "failed_sources" in tool_result:
-                        current_failures = list(state.get("failed_sources", []))
+                        current_failures = list(
+                            state_updates.get(
+                                "failed_sources",
+                                state.get("failed_sources", []),
+                            )
+                        )
                         current_failures.extend(tool_result["failed_sources"] or [])
                         state_updates["failed_sources"] = _dedupe_items(current_failures)
                     if "final_note" in tool_result:
@@ -346,9 +367,14 @@ def create_tool_node(state: NoteResearchState):
                     if "asset_paths" in tool_result:
                         state_updates["asset_paths"] = tool_result["asset_paths"]
                     if "asset_errors" in tool_result:
-                        current_errors = list(state.get("asset_errors", []))
+                        current_errors = list(
+                            state_updates.get(
+                                "asset_errors",
+                                state.get("asset_errors", []),
+                            )
+                        )
                         current_errors.extend(tool_result["asset_errors"] or [])
-                        state_updates["asset_errors"] = current_errors
+                        state_updates["asset_errors"] = _dedupe_items(current_errors)
                     if "saved_path" in tool_result:
                         state_updates["saved_path"] = tool_result["saved_path"]
                     if "note_title" in tool_result:
@@ -356,7 +382,12 @@ def create_tool_node(state: NoteResearchState):
                     if "notion_url" in tool_result:
                         state_updates["notion_url"] = tool_result["notion_url"]
                     if "intermediate_path" in tool_result:
-                        paths = list(state.get("intermediate_paths", []))
+                        paths = list(
+                            state_updates.get(
+                                "intermediate_paths",
+                                state.get("intermediate_paths", []),
+                            )
+                        )
                         paths.append(tool_result["intermediate_path"])
                         state_updates["intermediate_paths"] = _dedupe_items(paths)
 
