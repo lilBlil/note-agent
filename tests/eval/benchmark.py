@@ -27,21 +27,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
 RESULTS_DIR = Path(__file__).parent / "benchmark_results"
+DEFAULT_SAMPLE_SIZE = 8
 
 
-def _mean(xs: list[float]) -> float:
+def _mean(xs: list[float], digits: int = 3) -> float:
     xs = [x for x in xs if isinstance(x, (int, float))]
-    return round(sum(xs) / len(xs), 3) if xs else 0.0
+    return round(sum(xs) / len(xs), digits) if xs else 0.0
+
+
+def _model_name(provider: str) -> str:
+    """Return the configured model name without making a provider call."""
+    from note_agent.config.settings import MODEL_CONFIGS
+
+    return str(MODEL_CONFIGS.get(provider, {}).get("model", "unknown"))
 
 
 def _run_pipeline_to_final(case: dict, max_iterations: int, provider: str) -> dict:
     """Run the fixed graph end-to-end with real LLM calls but mocked disk I/O.
 
-    Returns {final_note, note_type, tokens, iterations}. Tokens come from the
-    per-run ContextVar tracker so we count only this case's spend.
+    Returns the final note, iteration count, token usage, and pipeline latency.
+    Token usage comes from the per-run ContextVar tracker so we count only this
+    case's generation spend.
     """
     from unittest.mock import patch
     from note_agent.agent.graph import get_graph
@@ -79,7 +89,9 @@ def _run_pipeline_to_final(case: dict, max_iterations: int, provider: str) -> di
         with patch("note_agent.agent.graph.save_markdown", lambda t, c: "/tmp/x.md"), \
              patch("note_agent.agent.graph.save_intermediate_note", _capture), \
              patch("note_agent.agent.graph.append_event", lambda *a, **k: None):
+            started = time.perf_counter()
             result = get_graph().invoke(state)
+            latency_seconds = time.perf_counter() - started
     finally:
         reset_event_handler(_tok)
 
@@ -95,8 +107,10 @@ def _run_pipeline_to_final(case: dict, max_iterations: int, provider: str) -> di
         "final_note": result.get("final_note", ""),
         "note_type": result.get("note_type", ""),
         "iterations": result.get("iteration_count", 0),
-        "total_tokens": usage["total_tokens"],
+        "input_tokens": usage["total_input_tokens"],
         "output_tokens": usage["total_output_tokens"],
+        "total_tokens": usage["total_tokens"],
+        "latency_seconds": round(latency_seconds, 6),
     }
 
 
@@ -115,16 +129,22 @@ def study_loop(cases: list[dict], iters: list[int], provider: str) -> dict:
             run = _run_pipeline_to_final(case, n, provider)
             judged = judge_note(case["input"], run["final_note"],
                                 run["note_type"], provider=provider)
+            hallucination_count = len(judged.get("hallucinations", []))
             row["by_iter"][str(n)] = {
+                "quality_score": judged["overall"],
                 "overall": judged["overall"],
                 "factual_accuracy": judged["scores"].get("factual_accuracy"),
                 "depth": judged["scores"].get("depth_and_mechanism"),
-                "hallucinations": len(judged.get("hallucinations", [])),
+                "hallucination_count": hallucination_count,
+                "hallucinations": hallucination_count,
+                "input_tokens": run["input_tokens"],
+                "output_tokens": run["output_tokens"],
                 "total_tokens": run["total_tokens"],
+                "latency_seconds": run["latency_seconds"],
             }
-            print(f"      iter={n}: overall={judged['overall']} "
-                  f"halluc={len(judged.get('hallucinations', []))} "
-                  f"tok={run['total_tokens']}", flush=True)
+            print(f"      iter={n}: quality={judged['overall']} "
+                  f"halluc={hallucination_count} tok={run['total_tokens']} "
+                  f"latency={run['latency_seconds']:.3f}s", flush=True)
         per_case.append(row)
 
     # Aggregate per iteration across all cases
@@ -132,14 +152,40 @@ def study_loop(cases: list[dict], iters: list[int], provider: str) -> dict:
     for n in iters:
         key = str(n)
         agg[key] = {
+            "quality_score": _mean([r["by_iter"][key]["quality_score"] for r in per_case]),
             "overall": _mean([r["by_iter"][key]["overall"] for r in per_case]),
             "factual_accuracy": _mean([r["by_iter"][key]["factual_accuracy"] for r in per_case]),
             "depth": _mean([r["by_iter"][key]["depth"] for r in per_case]),
-            "avg_hallucinations": _mean([r["by_iter"][key]["hallucinations"] for r in per_case]),
+            "avg_hallucinations": _mean([
+                r["by_iter"][key]["hallucination_count"] for r in per_case
+            ]),
+            "hallucination_count": _mean([
+                r["by_iter"][key]["hallucination_count"] for r in per_case
+            ]),
+            "avg_input_tokens": round(_mean([
+                r["by_iter"][key]["input_tokens"] for r in per_case
+            ])),
+            "avg_output_tokens": round(_mean([
+                r["by_iter"][key]["output_tokens"] for r in per_case
+            ])),
+            "avg_total_tokens": round(_mean([
+                r["by_iter"][key]["total_tokens"] for r in per_case
+            ])),
             "avg_tokens": round(_mean([r["by_iter"][key]["total_tokens"] for r in per_case])),
+            "avg_latency_seconds": _mean([
+                r["by_iter"][key]["latency_seconds"] for r in per_case
+            ], digits=6),
         }
-    return {"study": "loop", "n_cases": len(cases), "iters": iters,
-            "aggregate": agg, "per_case": per_case}
+    return {
+        "study": "loop",
+        "n_cases": len(cases),
+        "sample_size": len(cases),
+        "iters": iters,
+        "provider": provider,
+        "model": _model_name(provider),
+        "aggregate": agg,
+        "per_case": per_case,
+    }
 
 
 # ============================================================================
@@ -203,15 +249,22 @@ def study_patch(cases: list[dict], provider: str) -> dict:
         "avg_quality_patch": _mean([r["patch_overall"] for r in per_case]),
         "avg_quality_rewrite": _mean([r["rewrite_overall"] for r in per_case]),
     }
-    return {"study": "patch", "n_cases": len(cases),
-            "aggregate": agg, "per_case": per_case}
+    return {
+        "study": "patch",
+        "n_cases": len(cases),
+        "sample_size": len(cases),
+        "provider": provider,
+        "model": _model_name(provider),
+        "aggregate": agg,
+        "per_case": per_case,
+    }
 
 
 # ============================================================================
 # Reporting
 # ============================================================================
 
-def render_markdown(results: list[dict]) -> str:
+def _render_markdown_legacy(results: list[dict]) -> str:
     lines = ["# Benchmark Results\n"]
     for res in results:
         if res["study"] == "loop":
@@ -242,12 +295,75 @@ def render_markdown(results: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def render_markdown(results: list[dict]) -> str:
+    """Render benchmark metrics with explicit scope and model metadata."""
+    lines = ["# Benchmark Results\n"]
+    for res in results:
+        provider = res.get("provider", "unknown")
+        model = res.get("model", "unknown")
+        sample_size = res.get("sample_size", res.get("n_cases", 0))
+
+        if res["study"] == "loop":
+            agg = res["aggregate"]
+            iters = res["iters"]
+            lines.append(
+                f"## A. Retrieve-verify loop value (n={sample_size} cases)\n"
+            )
+            lines.append(f"- Provider: `{provider}`\n- Model: `{model}`")
+            lines.append(
+                "- Token and latency metrics cover generation pipeline calls; "
+                "LLM-as-judge calls are excluded.\n"
+            )
+            lines.append(
+                "| iterations | quality_score | factual_accuracy | depth | "
+                "avg_hallucinations | avg_input_tokens | avg_output_tokens | "
+                "avg_total_tokens | avg_latency_seconds |"
+            )
+            lines.append("|---|---|---|---|---|---|---|---|---|")
+            for n in iters:
+                a = agg[str(n)]
+                lines.append(
+                    f"| {n} | {a['quality_score']} | {a['factual_accuracy']} | "
+                    f"{a['depth']} | {a['avg_hallucinations']} | "
+                    f"{a['avg_input_tokens']} | {a['avg_output_tokens']} | "
+                    f"{a['avg_total_tokens']} | {a['avg_latency_seconds']} |"
+                )
+            lines.append(
+                "\n**Interpretation:** This is a descriptive result for the "
+                f"current sample of {sample_size} cases and the `{provider}` / "
+                f"`{model}` configuration. It is model- and judge-dependent "
+                "and does not establish that any iteration count is universally best.\n"
+            )
+        elif res["study"] == "patch":
+            aggregate = res["aggregate"]
+            lines.append(f"## B. PATCH vs full-rewrite (n={sample_size} cases)\n")
+            lines.append(f"- Provider: `{provider}`\n- Model: `{model}`\n")
+            lines.append("| metric | PATCH | full-rewrite |")
+            lines.append("|---|---|---|")
+            lines.append(
+                f"| avg output tokens | {aggregate['avg_patch_output_tokens']} | "
+                f"{aggregate['avg_rewrite_output_tokens']} |"
+            )
+            lines.append(
+                f"| avg quality (1-5) | {aggregate['avg_quality_patch']} | "
+                f"{aggregate['avg_quality_rewrite']} |"
+            )
+            lines.append(
+                "\n**Interpretation:** This comparison is limited to the "
+                f"current sample of {sample_size} cases and the `{provider}` / "
+                f"`{model}` configuration.\n"
+            )
+    return "\n".join(lines)
+
+
 def main() -> None:
     from tests.eval.cases import EVAL_CASES
 
     parser = argparse.ArgumentParser(description="Quantitative benchmark harness")
     parser.add_argument("--study", choices=["loop", "patch", "all"], default="all")
-    parser.add_argument("--n", type=int, default=5, help="number of cases to run")
+    parser.add_argument(
+        "--n", type=int, default=DEFAULT_SAMPLE_SIZE, help="number of cases to run"
+    )
     parser.add_argument("--iters", type=str, default="0,1,2", help="loop iterations, e.g. 0,1,2")
     parser.add_argument("--provider", type=str, default="deepseek")
     args = parser.parse_args()
