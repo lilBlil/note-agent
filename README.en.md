@@ -11,7 +11,7 @@
 **Note Agent** is a LangGraph-based note generation system for research, learning, and technical reading workflows. It organizes input understanding, draft generation, retrieval-based verification, refinement, asset generation, and publishing into an observable workflow, with both a fixed workflow mode and a ReAct tool-calling mode.
 
 - **Fixed Workflow**: Type inference, draft generation, retrieval, verification, refinement, asset generation, saving, and Notion publishing are explicitly orchestrated as LangGraph nodes.
-- **ReAct Agent + Tool Calling**: The same capabilities are exposed as tools, and the model selects the next action based on the current run state.
+- **ReAct Agent + Tool Calling**: Note-generation capabilities are exposed as tools, and the model selects the next action; authoritative arguments are injected from shared state at runtime instead of being reproduced by the model.
 - **Retrieval -> Verification -> Refinement**: The system drafts first, retrieves references, and then refines the note with supporting material to reduce unsupported claims and hallucination risk.
 - **Evaluation Harness + LLM-as-Judge**: Prompt snapshots, node-level logic tests, and a 6-dimension judge rubric support measurable iteration on prompts and workflows.
 
@@ -33,6 +33,9 @@ The project is designed for summarizing papers, technical topics, GitHub project
 | Capability | Implementation |
 |------------|----------------|
 | Dual agent architecture | Runtime switch between `fixed` LangGraph Workflow and `react` Tool Calling Agent |
+| ReAct reliability | Dedicated regression tests cover tool routing, iteration budgets, state injection, exception propagation, state deduplication, the Assets branch, and the Notion fallback |
+| Runtime state injection | The LLM selects tools and a small set of decision arguments; the current note, retrieval results, sources, and iteration count are injected from state at runtime |
+| Shared research services | Fixed and ReAct share retrieval, verification/refinement, and finalization logic; other stages remain in their respective node or tool adapters |
 | Multi-source input | Manual text, `.txt` / `.md` files, and webpage URL extraction |
 | Retrieval augmentation | DuckDuckGo / Tavily / Perplexity / SearXNG, plus Semantic Scholar / arXiv / OpenAlex / Google Books / Open Library |
 | Verification and refinement | Generates patches from retrieved references, applies them to the current note, and saves intermediate versions |
@@ -93,7 +96,7 @@ flowchart LR
     S --> A
 ```
 
-In ReAct mode, the same capabilities are exposed as tools, allowing the model to decide whether to retrieve more references, refine the note, generate assets, or publish to Notion based on the current state.
+In ReAct mode, note-generation capabilities are exposed as tools, allowing the model to decide whether to retrieve more references, refine the note, generate assets, or publish to Notion based on the current state. Authoritative data such as `current_note`, `reference_results`, `sources`, and `iteration_count` is hidden from or disregarded in the model-facing tool schema and injected from shared state by `tool_runtime.py` before execution. Fixed and ReAct currently share retrieval, verification/refinement, and finalization through `services/research.py`; draft generation, assets, saving, and publishing still have separate node/tool adapter code.
 
 ## Fixed Workflow vs ReAct
 
@@ -113,8 +116,11 @@ The project includes a lightweight Evaluation Harness for assessing prompts and 
 
 - **Prompt snapshots**: Snapshot outputs for key prompts to catch unintended prompt behavior changes.
 - **Node logic tests**: Cover structure parsing, patch application, asset planning, Notion conversion, and other core logic.
+- **ReAct regression tests**: Cover tool routing, iteration budgets, runtime state injection, tool exceptions, state merging, and optional branches.
 - **LLM-as-Judge**: Scores generated notes across 6 dimensions and produces prompt-oriented improvement suggestions.
-- **Benchmark runner**: Compares quality across different refinement iteration counts.
+- **Eval case library**: Currently contains 22 cases spanning knowledge explanations, paper/project analysis, engineering debugging, vague prompts, and Chinese/English content.
+- **Benchmark runner**: Selects 8 representative cases by default and compares `0 / 1 / 2` refinement rounds; it can also select cases by ID or sample size and supports both the retrieve-verify loop and PATCH-versus-full-rewrite studies.
+- **Benchmark outputs**: Can generate `results.json`, `REPORT.md`, and `summary.csv` with quality, factual accuracy, depth, hallucination count, input/output/total tokens, and generation-pipeline latency.
 
 ### Judge Rubric
 
@@ -127,11 +133,15 @@ The project includes a lightweight Evaluation Harness for assessing prompts and 
 | pedagogy_readability | 0.15 | Whether the note is suitable for learning and explains terms and examples clearly |
 | asset_appropriateness | 0.10 | Whether formulas, code, and charts are necessary and correct |
 
-### Current Benchmark
+### Eval Capability and Recorded Results
 
-> The current sample size is very small and is only useful for validating the evaluation pipeline and observing directional trends. It should not be treated as a generalized conclusion.
+The number of cases in the code, the benchmark's default sample size, and the results actually executed and stored in the repository are different things:
 
-The current repository benchmark is `n=1`:
+- `tests/eval/cases.py` currently defines **22 eval cases**.
+- The benchmark runner selects **8 representative cases** by default and compares `iterations=0,1,2` by default.
+- These capabilities do not mean that the 8-case benchmark has already been executed. The committed results under `tests/eval/benchmark_results/` still contain only **1 case**.
+
+The recorded `n=1` benchmark below is useful only for validating the evaluation pipeline and observing this sample's trend. It should not be treated as a generalized conclusion:
 
 | iterations | overall | factual_accuracy | depth | avg_hallucinations | avg_tokens |
 |------------|---------|------------------|-------|--------------------|------------|
@@ -139,7 +149,7 @@ The current repository benchmark is `n=1`:
 | 1 | 4.65 | 4.0 | 5.0 | 0.0 | 33,637 |
 | 2 | 4.50 | 4.0 | 5.0 | 1.0 | 74,625 |
 
-For this sample, 1 round of Retrieval -> Verification -> Refinement improved the quality metrics. A second round increased token cost significantly without a stable additional quality gain. Larger samples are needed for stronger conclusions.
+For this single sample, 1 round of Retrieval -> Verification -> Refinement improved the quality metrics. A second round increased token cost without a stable additional quality gain. This only describes the stored result and does not establish that 1 iteration is generally optimal. The next step is to execute and publish an 8-case or larger benchmark.
 
 ## Quick Start
 
@@ -283,9 +293,12 @@ src/note_agent/
 ├── io/           # Input loading, event stream, storage, Markdown saving
 ├── notion/       # Markdown -> Notion Blocks conversion and publishing
 ├── retrieval/    # Multi-source retrieval, cache, result formatting
+├── services/     # Retrieval, refinement, and finalization logic shared by Fixed and ReAct
 └── ui/           # Streamlit UI, history, rendering, Token display
 
 tests/
+├── agent/        # ReAct routing, budget, state injection, exception, and Fixed/ReAct parity tests
+├── services/     # Shared research-service tests
 ├── unit/         # Unit tests
 └── eval/         # Prompt snapshots, LLM-as-Judge, benchmark
 ```
@@ -305,18 +318,25 @@ tests/
 The repository includes GitHub Actions CI in `.github/workflows/ci.yml`. It runs Ruff and pytest on pushes to `main` and pull requests. Run the following checks locally:
 
 ```powershell
+uv run ruff check src tests
 uv run pytest tests -q
 uv run python -m compileall -q src
-uv run ruff check src tests
 ```
 
 The latest test status is reported by GitHub Actions CI.
 
 ## Roadmap
 
+- [x] Add dedicated ReAct regression tests for routing, budgets, state injection, exceptions, and state merging
+- [x] Inject authoritative ReAct tool arguments from shared state at runtime
+- [x] Share retrieval, verification/refinement, and finalization logic between Fixed and ReAct
+- [x] Expand the eval case library to 22 cases and provide a default 8-case benchmark runner for `0 / 1 / 2` iterations
 - [ ] Add Demo GIFs and Web UI screenshots to improve the GitHub first-screen experience
 - [x] GitHub Actions CI for Ruff and pytest
-- [ ] Expand benchmark sample size and report quality by note type
+- [ ] Execute and commit benchmark data for at least 8 cases; the currently stored result is still `n=1`
+- [ ] Aggregate benchmark results by note type and record reproducible model, provider, and runtime metadata
+- [ ] Continue extracting draft, asset, save, and publish logic where Fixed and ReAct can safely share it
+- [ ] Add unified observability metrics for tool calls, retrieval counts/failures, and node latency
 - [ ] Add retrieval result reranking / source quality scoring
 - [ ] Add export formats: PDF / HTML / Obsidian vault
 - [ ] Turn common agent runs into reproducible experiment scripts for engineering demos

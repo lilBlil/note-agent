@@ -11,7 +11,7 @@
 **Note Agent** 是一个面向研究、学习和技术阅读场景的 LangGraph 笔记生成系统。项目将输入理解、草稿生成、检索核验、内容修订、资产生成与发布串联为可观测的工作流，并提供固定流程与 ReAct 工具调用两种运行模式。
 
 - **Fixed Workflow**：类型识别、初稿生成、检索、核验、修正、资产生成、保存 / Notion 发布由 LangGraph 节点显式编排。
-- **ReAct Agent + Tool Calling**：同一组能力封装为工具，由模型根据运行状态选择后续动作。
+- **ReAct Agent + Tool Calling**：笔记生成能力封装为工具，由模型选择后续动作；运行时从共享 state 注入权威参数，避免模型回传长文本和迭代计数。
 - **Retrieval -> Verification -> Refinement**：先生成笔记草稿，再检索参考资料并进行核验修正，减少无来源断言和幻觉风险。
 - **Evaluation Harness + LLM-as-Judge**：通过快照测试、节点逻辑测试和 6 维 Judge 评分体系支持 Prompt / Workflow 的量化迭代。
 
@@ -33,6 +33,9 @@
 | 能力 | 实现 |
 |------|------|
 | 双 Agent 架构 | `fixed` LangGraph Workflow 与 `react` Tool Calling Agent，可运行时切换 |
+| ReAct 可靠性 | 专项回归测试覆盖工具路由、迭代预算、state injection、异常传播、状态去重、Assets 分支和 Notion fallback |
+| Runtime state injection | LLM 只决定工具及少量决策参数；当前笔记、检索结果、来源和迭代计数等由运行时从 state 注入 |
+| 共享研究服务 | Fixed 与 ReAct 共用检索、核验修订和最终定稿逻辑；其他流程仍由各自的节点或工具适配层负责 |
 | 多源输入 | 手动文本、`.txt` / `.md` 文件、网页 URL 正文抓取 |
 | 检索增强 | DuckDuckGo / Tavily / Perplexity / SearXNG，以及 Semantic Scholar / arXiv / OpenAlex / Google Books / Open Library |
 | 核验修正 | 根据检索结果生成 patch，应用到当前笔记并保存中间版本 |
@@ -93,7 +96,7 @@ flowchart LR
     S --> A
 ```
 
-ReAct 模式把同一套能力暴露为工具，模型可以根据当前状态决定是否继续检索、是否修正、是否生成资产或发布到 Notion。
+ReAct 模式把笔记生成能力暴露为工具，模型可以根据当前状态决定是否继续检索、是否修正、是否生成资产或发布到 Notion。对于 `current_note`、`reference_results`、`sources` 和 `iteration_count` 等权威数据，模型侧工具 schema 会隐藏或忽略这些字段，由 `tool_runtime.py` 在执行前从共享 state 注入。Fixed 与 ReAct 当前通过 `services/research.py` 共用检索、核验修订和最终定稿逻辑；草稿、资产、保存和发布仍保留各自的节点 / 工具适配代码。
 
 ## Fixed Workflow vs ReAct
 
@@ -113,8 +116,11 @@ ReAct 模式把同一套能力暴露为工具，模型可以根据当前状态�
 
 - **Prompt snapshots**：固定关键 Prompt 的输出快照，避免无意改坏生成策略。
 - **Node logic tests**：覆盖结构解析、patch 应用、资产规划、Notion 转换等核心逻辑。
+- **ReAct regression tests**：覆盖工具路由、迭代预算、runtime state injection、工具异常、状态合并及可选分支。
 - **LLM-as-Judge**：按 6 个维度对生成笔记评分，并输出面向 Prompt 的改进建议。
-- **Benchmark runner**：比较不同迭代轮数下的质量变化。
+- **Eval case library**：当前包含 22 个 case，覆盖知识讲解、论文 / 项目分析、工程调试、模糊输入和中英文内容等场景。
+- **Benchmark runner**：默认选择其中 8 个代表性 case，对比 `0 / 1 / 2` 轮修订；也可按 case ID 或样本数运行，并支持 retrieve-verify loop 与 PATCH / 全文重写对比。
+- **Benchmark outputs**：可生成 `results.json`、`REPORT.md` 和 `summary.csv`，汇总质量、事实准确性、深度、幻觉数、输入 / 输出 / 总 token 与生成链路延迟。
 
 ### Judge Rubric
 
@@ -127,11 +133,15 @@ ReAct 模式把同一套能力暴露为工具，模型可以根据当前状态�
 | pedagogy_readability | 0.15 | 是否适合学习，术语和例子是否清楚 |
 | asset_appropriateness | 0.10 | 公式 / 代码 / 图表是否必要且正确 |
 
-### 当前 Benchmark
+### Eval 能力与已记录结果
 
-> 样本量很小，仅用于验证评估链路和观察趋势，不能作为泛化结论。
+代码中的 case 数量、benchmark 默认样本量和仓库中已经实际跑出的结果是三个不同概念：
 
-当前仓库记录的 benchmark 为 `n=1`：
+- `tests/eval/cases.py` 当前定义了 **22 个 eval cases**。
+- benchmark runner 默认从中选择 **8 个代表性 case**，并默认比较 `iterations=0,1,2`。
+- 这些能力不代表 8-case benchmark 已经实际执行。当前提交在 `tests/eval/benchmark_results/` 下的结果仍然只有 **1 个 case**。
+
+当前已记录的 `n=1` benchmark 数据如下，仅用于验证评测链路和观察该样本的趋势，不能作为泛化结论：
 
 | iterations | overall | factual_accuracy | depth | avg_hallucinations | avg_tokens |
 |------------|---------|------------------|-------|--------------------|------------|
@@ -139,7 +149,7 @@ ReAct 模式把同一套能力暴露为工具，模型可以根据当前状态�
 | 1 | 4.65 | 4.0 | 5.0 | 0.0 | 33,637 |
 | 2 | 4.50 | 4.0 | 5.0 | 1.0 | 74,625 |
 
-在该样本中，1 轮 Retrieval -> Verification -> Refinement 的质量指标有所提升；2 轮迭代带来了更高 token 成本，但质量没有继续稳定提升。更可靠的结论需要扩大样本量。
+在这个单一样本中，1 轮 Retrieval -> Verification -> Refinement 的质量指标有所提升；2 轮迭代带来了更高 token 成本，但质量没有继续稳定提升。这只是对已保存结果的描述，不证明 1 轮迭代普遍最优。下一步仍需实际运行并发布 8-case 或更大样本的结果。
 
 ## 快速开始
 
@@ -283,9 +293,12 @@ src/note_agent/
 ├── io/           # 输入加载、事件流、存储、Markdown 保存
 ├── notion/       # Markdown -> Notion Blocks 转换与发布
 ├── retrieval/    # 多源检索、缓存、结果格式化
+├── services/     # Fixed / ReAct 共用的检索、修订与最终定稿业务逻辑
 └── ui/           # Streamlit UI、历史记录、渲染、Token 展示
 
 tests/
+├── agent/        # ReAct 路由、预算、state injection、异常和 Fixed/ReAct 一致性测试
+├── services/     # 共享 research service 测试
 ├── unit/         # 单元测试
 └── eval/         # Prompt snapshots、LLM-as-Judge、benchmark
 ```
@@ -305,18 +318,25 @@ tests/
 仓库已配置 GitHub Actions CI（`.github/workflows/ci.yml`），会在推送到 `main` 和 Pull Request 时运行 Ruff 与 pytest。本地可运行：
 
 ```powershell
+uv run ruff check src tests
 uv run pytest tests -q
 uv run python -m compileall -q src
-uv run ruff check src tests
 ```
 
 最新测试状态以 GitHub Actions CI 为准。
 
 ## Roadmap
 
+- [x] 增加 ReAct 专项回归测试，覆盖路由、预算、state injection、异常和状态合并
+- [x] 由 runtime 从共享 state 注入 ReAct 工具的权威参数
+- [x] Fixed / ReAct 共用检索、核验修订和最终定稿业务逻辑
+- [x] 将 eval case 库扩展到 22 个，并提供默认 8-case、`0 / 1 / 2` iterations 的 benchmark runner
 - [ ] 补充 Demo GIF 和 Web UI 截图，提高 GitHub 首屏可信度
 - [x] GitHub Actions CI，自动运行 Ruff 与 pytest
-- [ ] 扩大 benchmark 样本量，按 note type 输出更可信的质量对比
+- [ ] 实际运行并提交至少 8 个 case 的 benchmark 数据；当前已保存结果仍为 `n=1`
+- [ ] 按 note type 汇总 benchmark，并补充可复现的模型、provider 和运行环境元数据
+- [ ] 继续提取草稿、资产、保存和发布逻辑中适合 Fixed / ReAct 共用的部分
+- [ ] 增加 tool-call、检索次数、失败数和节点耗时等统一可观测指标
 - [ ] 增加检索结果 rerank / source quality scoring
 - [ ] 增加导出格式：PDF / HTML / Obsidian vault
 - [ ] 将常用 Agent run 做成可复现实验脚本，便于工程展示
